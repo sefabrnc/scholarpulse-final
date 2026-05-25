@@ -13,6 +13,21 @@ def should_skip_for_ocr(text: str, min_extract_chars: int) -> bool:
     return len(text.strip()) < min_extract_chars
 
 
+def should_skip_paper_for_ocr(
+    *,
+    text_len: int,
+    node_count: int,
+    min_extract_chars: int,
+    bypass: bool = False,
+) -> bool:
+    """Skip only when bypass is off, no sentence nodes were extracted, and text is short."""
+    if bypass:
+        return False
+    if node_count > 0:
+        return False
+    return text_len < min_extract_chars
+
+
 def is_likely_math_sentence(text: str) -> bool:
     if LATEX_PATTERN.search(text):
         return True

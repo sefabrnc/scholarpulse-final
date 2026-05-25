@@ -44,7 +44,7 @@ def ensure_pdf_for_paper(
         )
 
     fetcher = PdfFetcher(cache_dir=config.pdf_cache_dir, timeout_s=config.pdf_fetch_timeout_s)
-    cached = fetcher.get_cached(doi)
+    cached = fetcher.get_cached(doi, min_text_chars=config.min_extract_chars)
     if cached and not force_fetch:
         return str(cached), {
             "pdf_source": "cache",

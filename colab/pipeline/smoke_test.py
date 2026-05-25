@@ -385,6 +385,81 @@ class PipelineSmokeTest(unittest.TestCase):
         self.assertEqual(route, "clean")
         self.assertEqual(pass0_5_reference_parser._resolve_route(context), "grobid")
 
+    def test_ocr_skip_not_triggered_when_nodes_present(self) -> None:
+        from colab.pipeline.policies.skip_policies import should_skip_paper_for_ocr
+
+        self.assertFalse(
+            should_skip_paper_for_ocr(
+                text_len=0,
+                node_count=12,
+                min_extract_chars=100,
+            )
+        )
+
+    def test_ocr_skip_bypass_env(self) -> None:
+        from colab.pipeline.policies.skip_policies import should_skip_paper_for_ocr
+
+        self.assertFalse(
+            should_skip_paper_for_ocr(
+                text_len=0,
+                node_count=0,
+                min_extract_chars=100,
+                bypass=True,
+            )
+        )
+
+    def test_pass0_arxiv_attention_extracts(self) -> None:
+        import shutil
+        import tempfile
+
+        from colab.pipeline.clients.pdf_fetch import PdfFetcher
+        from colab.pipeline.stages import pass0_preflight_extract
+        from colab.pipeline.types import PaperInput, PipelineContext
+
+        tmp = tempfile.mkdtemp()
+        try:
+            fetcher = PdfFetcher(cache_dir=tmp)
+            pdf = fetcher.download(
+                "10.48550/arXiv.1706.03762",
+                "https://arxiv.org/pdf/1706.03762.pdf",
+                force=True,
+            )
+            config = PipelineConfig()
+            context = PipelineContext(
+                config=config,
+                paper=PaperInput(
+                    doi="10.48550/arXiv.1706.03762",
+                    pdf_path=str(pdf),
+                    metadata={},
+                ),
+            )
+            context = pass0_preflight_extract.run(context)
+            self.assertIsNone(context.skipped_reason)
+            self.assertGreater(len(context.nodes), 50)
+            self.assertGreater(context.extracted_text_len, config.min_extract_chars)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_pdf_cache_rejects_empty_text(self) -> None:
+        import shutil
+        import tempfile
+
+        from colab.pipeline.clients.pdf_fetch import PdfFetcher, pdf_has_extractable_text
+
+        tmp = tempfile.mkdtemp()
+        try:
+            fetcher = PdfFetcher(cache_dir=tmp)
+            pdf = fetcher.download(
+                "10.48550/arXiv.1706.03762",
+                "https://arxiv.org/pdf/1706.03762.pdf",
+                force=True,
+            )
+            self.assertTrue(pdf_has_extractable_text(pdf, min_chars=100))
+            cached = fetcher.get_cached("10.48550/arXiv.1706.03762", min_text_chars=100)
+            self.assertIsNotNone(cached)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
 
 def main() -> int:
     suite = unittest.defaultTestLoader.loadTestsFromTestCase(PipelineSmokeTest)

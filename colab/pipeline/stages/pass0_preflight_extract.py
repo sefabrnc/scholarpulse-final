@@ -7,7 +7,7 @@ import re
 from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
 from ..helpers.figure_table import extract_figure_table_nodes
-from ..policies.skip_policies import should_skip_for_ocr, should_skip_sentence
+from ..policies.skip_policies import should_skip_paper_for_ocr, should_skip_sentence
 from ..types import PipelineContext, SentenceNode
 
 SENTENCE_SPLIT_REGEX = re.compile(r"(?<=[.!?])\s+")
@@ -185,8 +185,40 @@ def _extract_with_pymupdf(context: PipelineContext) -> bool:
     return len(context.nodes) > 0
 
 
+def _load_pdf_plain_text(pdf_path: str, *, warnings: List[str] | None = None) -> str:
+    """Extract full document text with PyMuPDF plain mode."""
+    try:
+        import fitz  # type: ignore
+    except Exception as exc:
+        if warnings is not None:
+            warnings.append(f"pymupdf_unavailable:{exc.__class__.__name__}")
+        return ""
+    try:
+        with fitz.open(pdf_path) as doc:
+            return "".join(doc.load_page(i).get_text("text") for i in range(doc.page_count))
+    except Exception as exc:
+        if warnings is not None:
+            warnings.append(f"pymupdf_plain_text_failed:{exc}")
+        return ""
+
+
+def _resolve_skip_reason(context: PipelineContext, text_len: int) -> str:
+    if any("pymupdf_unavailable" in warning for warning in context.warnings):
+        return "skipped_pymupdf_unavailable"
+    if any("pymupdf_open_failed" in warning for warning in context.warnings):
+        return "skipped_pdf_open_failed"
+    context.warnings.append(f"ocr_skip_text_len={text_len}")
+    return "skipped_ocr_required"
+
+
 def run(context: PipelineContext) -> PipelineContext:
     raw_text = str(context.paper.metadata.get("raw_text", ""))
+    pdf_path = str(context.paper.pdf_path or "").strip()
+    if pdf_path and not raw_text.strip():
+        pdf_text = _load_pdf_plain_text(pdf_path, warnings=context.warnings)
+        if pdf_text.strip():
+            raw_text = pdf_text
+
     if not raw_text:
         fallback_blocks = context.paper.metadata.get("pages", [])
         if isinstance(fallback_blocks, list):
@@ -200,42 +232,42 @@ def run(context: PipelineContext) -> PipelineContext:
     context.extracted_text_len = len(raw_text)
     accumulated_text: List[str] = [raw_text] if raw_text else []
 
-    if should_skip_for_ocr(raw_text, context.config.min_extract_chars):
-        try:
-            import fitz  # type: ignore
-
-            with fitz.open(context.paper.pdf_path) as doc:
-                extracted = "".join(doc.load_page(i).get_text("text") for i in range(doc.page_count))
-            raw_text = extracted
-            context.extracted_text_len = len(raw_text)
-            accumulated_text = [raw_text]
-        except Exception:
-            pass
-        if should_skip_for_ocr(raw_text, context.config.min_extract_chars):
-            context.skipped_reason = "skipped_ocr_required"
-            return context
-
     extracted = _extract_with_pymupdf(context)
     if not extracted:
         _extract_from_metadata(context)
 
     if not accumulated_text or not accumulated_text[0]:
-        try:
-            import fitz  # type: ignore
+        if pdf_path:
+            fallback_text = _load_pdf_plain_text(pdf_path, warnings=context.warnings)
+            if fallback_text.strip():
+                accumulated_text = [fallback_text]
+        if not accumulated_text or not accumulated_text[0]:
+            try:
+                import fitz  # type: ignore
 
-            with fitz.open(context.paper.pdf_path) as doc:
-                context.artifacts["page_count"] = doc.page_count
-                accumulated_text = [
-                    "".join(doc.load_page(i).get_text("text") for i in range(doc.page_count))
-                ]
-        except Exception:
-            pass
+                with fitz.open(context.paper.pdf_path) as doc:
+                    context.artifacts["page_count"] = doc.page_count
+                    accumulated_text = [
+                        "".join(doc.load_page(i).get_text("text") for i in range(doc.page_count))
+                    ]
+            except Exception as exc:
+                context.warnings.append(f"pymupdf_plain_text_failed:{exc}")
 
     if accumulated_text:
         merged = " ".join(part for part in accumulated_text if part).strip()
         if merged:
             context.artifacts["raw_text"] = merged
             context.extracted_text_len = len(merged)
+            raw_text = merged
+
+    if should_skip_paper_for_ocr(
+        text_len=context.extracted_text_len,
+        node_count=len(context.nodes),
+        min_extract_chars=context.config.min_extract_chars,
+        bypass=context.config.disable_ocr_skip,
+    ):
+        context.skipped_reason = _resolve_skip_reason(context, context.extracted_text_len)
+        return context
 
     if not context.nodes:
         # Keep pipeline alive with metadata fallback.

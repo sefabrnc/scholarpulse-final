@@ -21,9 +21,16 @@ def _env_str(name: str, default: str) -> str:
     return os.getenv(name, default)
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True)
 class PipelineConfig:
-    min_extract_chars: int = _env_int("SP_MIN_EXTRACT_CHARS", 100)
+    min_extract_chars: int = _env_int("SP_MIN_EXTRACT_CHARS", 50)
     max_papers_per_chunk: int = _env_int("SP_MAX_PAPERS_PER_CHUNK", 50)
     candidate_top_k: int = _env_int("SP_CANDIDATE_TOP_K", 5)
     vector_score_threshold: float = _env_float("SP_VECTOR_SCORE_THRESHOLD", 0.50)
@@ -62,5 +69,10 @@ class PipelineConfig:
     intent_model: str = _env_str("SP_INTENT_MODEL", "citefusion/scicite-ws")
     citefusion_weights_dir: Optional[str] = os.getenv("SP_CITEFUSION_WEIGHTS_DIR")
     use_real_models: bool = os.getenv("SP_USE_REAL_MODELS", "1").strip().lower() in {"1", "true", "yes", "on"}
+    disable_ocr_skip: bool = (
+        _env_bool("SP_DISABLE_OCR_SKIP")
+        or _env_bool("SP_FORCE_INGEST")
+        or os.getenv("SP_SKIP_OCR", "1").strip().lower() in {"0", "false", "no", "off"}
+    )
     default_algorithm_version: str = _env_str("SP_ALGORITHM_VERSION", "v0-skeleton")
 

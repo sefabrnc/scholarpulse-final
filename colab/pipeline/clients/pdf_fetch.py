@@ -30,6 +30,23 @@ def is_valid_pdf_file(path: Path) -> bool:
     return header.startswith(PDF_MAGIC)
 
 
+def pdf_has_extractable_text(path: Path, *, min_chars: int = 50) -> bool:
+    """Return True when PyMuPDF can read at least min_chars from the PDF."""
+    if not is_valid_pdf_file(path):
+        return False
+    try:
+        import fitz  # type: ignore
+    except Exception:
+        return True
+    try:
+        with fitz.open(str(path)) as doc:
+            sample_pages = min(doc.page_count, 3)
+            text = "".join(doc.load_page(i).get_text("text") for i in range(sample_pages))
+        return len(text.strip()) >= min_chars
+    except Exception:
+        return False
+
+
 class PdfFetcher:
     def __init__(
         self,
@@ -71,8 +88,10 @@ class PdfFetcher:
         tmp_path.replace(cache_path)
         return cache_path
 
-    def get_cached(self, doi: str) -> Optional[Path]:
+    def get_cached(self, doi: str, *, min_text_chars: int = 0) -> Optional[Path]:
         cache_path = self.cache_path_for_doi(doi)
-        if is_valid_pdf_file(cache_path):
-            return cache_path
-        return None
+        if not is_valid_pdf_file(cache_path):
+            return None
+        if min_text_chars > 0 and not pdf_has_extractable_text(cache_path, min_chars=min_text_chars):
+            return None
+        return cache_path
