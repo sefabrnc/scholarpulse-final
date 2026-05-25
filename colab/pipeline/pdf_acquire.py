@@ -68,7 +68,12 @@ def ensure_pdf_for_paper(
             "Provide --pdf manually or set SP_UNPAYWALL_EMAIL."
         )
 
-    downloaded = fetcher.download(doi, resolved.url, force=force_fetch)
+    downloaded = fetcher.download(
+        doi,
+        resolved.url,
+        force=force_fetch,
+        min_text_chars=config.min_extract_chars,
+    )
     return str(downloaded), {
         "pdf_source": resolved.source,
         "pdf_path": str(downloaded),

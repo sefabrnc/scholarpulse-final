@@ -7,6 +7,7 @@ import re
 from typing import Dict, List, Optional
 
 from ..index.faiss_local import DoiVectorIndexRegistry
+from ..models.embedding import EmbeddingModel, _stub_embed
 from ..types import PipelineContext, SentenceNode
 
 
@@ -40,7 +41,21 @@ def _synthetic_target_node(context: PipelineContext, resolved_doi: str, referenc
     )
 
 
-def run(context: PipelineContext) -> PipelineContext:
+def _embed_synthetic_target(
+    text: str,
+    *,
+    embedding_model: EmbeddingModel | None,
+    fallback_dim: int,
+) -> List[float]:
+    payload = text.strip()
+    if not payload:
+        return [0.0 for _ in range(fallback_dim)]
+    if embedding_model is not None:
+        return embedding_model.embed([payload])[0]
+    return _stub_embed([payload], dim=fallback_dim)[0]
+
+
+def run(context: PipelineContext, embedding_model: EmbeddingModel | None = None) -> PipelineContext:
     if context.skipped_reason:
         return context
 
@@ -91,8 +106,13 @@ def run(context: PipelineContext) -> PipelineContext:
                 nodes_by_doi.setdefault(resolved_doi_str, []).append(synthetic.sentence_id)
                 node_by_id[synthetic.sentence_id] = synthetic
                 any_vector = next((vec for vec in node_embeddings.values() if isinstance(vec, list)), None)
+                embed_text = synthetic.text.strip() or str(reference.get("raw_text") or resolved_doi_str)
                 if any_vector:
-                    node_embeddings[synthetic.sentence_id] = [0.0 for _ in any_vector]
+                    node_embeddings[synthetic.sentence_id] = _embed_synthetic_target(
+                        embed_text,
+                        embedding_model=embedding_model,
+                        fallback_dim=len(any_vector),
+                    )
                 pending_bibs.append(
                     {
                         "source_doi": context.paper.doi,

@@ -35,6 +35,7 @@ class PipelineConfig:
     candidate_top_k: int = _env_int("SP_CANDIDATE_TOP_K", 5)
     vector_score_threshold: float = _env_float("SP_VECTOR_SCORE_THRESHOLD", 0.50)
     ce_threshold: float = _env_float("SP_CE_THRESHOLD", 0.85)
+    intra_paper_ce_threshold: float = _env_float("SP_INTRA_PAPER_CE_THRESHOLD", 0.55)
     cross_paper_ce_threshold: float = _env_float("SP_CROSS_PAPER_CE_THRESHOLD", 0.65)
     high_confidence_threshold: float = _env_float("SP_HIGH_CONFIDENCE_THRESHOLD", 0.95)
     bib_match_threshold: float = _env_float("SP_BIB_MATCH_THRESHOLD", 0.92)
@@ -71,6 +72,7 @@ class PipelineConfig:
     use_real_models: bool = os.getenv("SP_USE_REAL_MODELS", "1").strip().lower() in {"1", "true", "yes", "on"}
     disable_ocr_skip: bool = (
         _env_bool("SP_DISABLE_OCR_SKIP")
+        or _env_bool("SP_FORCE_TEXT_EXTRACT")
         or _env_bool("SP_FORCE_INGEST")
         or os.getenv("SP_SKIP_OCR", "1").strip().lower() in {"0", "false", "no", "off"}
     )

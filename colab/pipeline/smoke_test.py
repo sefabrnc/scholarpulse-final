@@ -109,6 +109,7 @@ class PipelineSmokeTest(unittest.TestCase):
         self.assertEqual(config.rerank_model, "Alibaba-NLP/gte-reranker-modernbert-base")
         self.assertEqual(config.intent_model, "citefusion/scicite-ws")
         self.assertEqual(config.grobid_mode, "auto")
+        self.assertEqual(config.intra_paper_ce_threshold, 0.55)
 
     def test_intent_ws_context_and_partial_version(self) -> None:
         intent = IntentModel("citefusion/scicite-ws")
@@ -299,6 +300,62 @@ class PipelineSmokeTest(unittest.TestCase):
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
+    def test_intra_paper_cite_edges_stub(self) -> None:
+        from dataclasses import replace
+
+        from colab.pipeline.stages import pass3_candidate_search, pass4_rerank, pass6_marker_validation
+        from colab.pipeline.types import PaperInput, PipelineContext, SentenceNode
+
+        config = replace(
+            PipelineConfig(),
+            vector_score_threshold=0.0,
+            intra_paper_ce_threshold=0.35,
+            ce_threshold=0.85,
+        )
+        source_text = "Attention is all you need for sequence transduction models [1]."
+        context = PipelineContext(
+            config=config,
+            paper=PaperInput(doi="10.1000/paper", pdf_path="x.pdf", metadata={}),
+        )
+        context.nodes = [
+            SentenceNode(
+                sentence_id="src1",
+                doi="10.1000/paper",
+                page=1,
+                norm_x=0.1,
+                norm_y=0.2,
+                norm_w=0.8,
+                norm_h=0.05,
+                text=source_text,
+            )
+        ]
+        context.references = [
+            {
+                "ref_index": 1,
+                "raw_text": "Vaswani et al., Attention Is All You Need, 2017.",
+                "title": "Attention Is All You Need",
+                "resolved_doi": "10.48550/arXiv.1706.03762",
+            }
+        ]
+        context.artifacts["resolved_references"] = list(context.references)
+
+        embed = EmbeddingModel("test-embed")
+        rerank = RerankerModel("test-rerank")
+        try:
+            context.artifacts["node_embeddings"] = {"src1": embed.embed([source_text])[0]}
+            context = pass3_candidate_search.run(context, embedding_model=embed)
+            self.assertGreater(len(context.artifacts.get("candidates", [])), 0)
+
+            context = pass4_rerank.run(context, reranker=rerank)
+            self.assertGreater(len(context.edges), 0, "pass4 should keep intra-paper cite edges")
+
+            context = pass6_marker_validation.run(context)
+            self.assertGreater(len(context.edges), 0, "pass6 should keep valid marker edges")
+            self.assertEqual(context.edges[0].ref_index, 1)
+        finally:
+            embed.release()
+            rerank.release()
+
     def test_pass8_cross_paper_resolve_stub(self) -> None:
         from colab.pipeline.cross_citations import IncomingCrossCitation
         from colab.pipeline.stages import pass8_cross_paper_resolve
@@ -440,6 +497,36 @@ class PipelineSmokeTest(unittest.TestCase):
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
+    def test_pdf_fetch_rejects_html_body(self) -> None:
+        from colab.pipeline.clients.pdf_fetch import looks_like_html
+
+        self.assertTrue(looks_like_html(b"<!DOCTYPE html><html><body>x</body></html>"))
+        self.assertTrue(looks_like_html(b"  <html><head></head></html>"))
+        self.assertFalse(looks_like_html(b"%PDF-1.4 fake"))
+
+    def test_pdf_fetch_redownloads_empty_text_cache(self) -> None:
+        import shutil
+        import tempfile
+
+        from colab.pipeline.clients.pdf_fetch import PdfFetcher, pdf_has_extractable_text
+
+        tmp = tempfile.mkdtemp()
+        try:
+            fetcher = PdfFetcher(cache_dir=tmp)
+            cache_path = fetcher.cache_path_for_doi("10.48550/arXiv.1706.03762")
+            cache_path.write_bytes(b"%PDF-1.4\n" + b"0 " * 2000)
+            self.assertFalse(pdf_has_extractable_text(cache_path, min_chars=100))
+            self.assertIsNone(fetcher.get_cached("10.48550/arXiv.1706.03762", min_text_chars=100))
+
+            good_pdf = fetcher.download(
+                "10.48550/arXiv.1706.03762",
+                "https://arxiv.org/pdf/1706.03762.pdf",
+                min_text_chars=100,
+            )
+            self.assertTrue(pdf_has_extractable_text(good_pdf, min_chars=100))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
     def test_pdf_cache_rejects_empty_text(self) -> None:
         import shutil
         import tempfile
@@ -453,6 +540,7 @@ class PipelineSmokeTest(unittest.TestCase):
                 "10.48550/arXiv.1706.03762",
                 "https://arxiv.org/pdf/1706.03762.pdf",
                 force=True,
+                min_text_chars=100,
             )
             self.assertTrue(pdf_has_extractable_text(pdf, min_chars=100))
             cached = fetcher.get_cached("10.48550/arXiv.1706.03762", min_text_chars=100)

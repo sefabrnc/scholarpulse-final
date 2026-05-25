@@ -42,6 +42,7 @@ def run(context: PipelineContext) -> Dict:
         ),
         "model_backends": context.artifacts.get("model_backends", {}),
         "cross_paper_stats": context.artifacts.get("cross_paper_stats", {}),
+        "rerank_stats": context.artifacts.get("rerank_stats", {}),
     }
     return payload
 

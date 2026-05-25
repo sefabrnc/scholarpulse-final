@@ -153,7 +153,7 @@ def _extract_with_pymupdf(context: PipelineContext) -> bool:
             page_dict = page.get_text("dict")
             blocks = page_dict.get("blocks", [])
             for block in blocks:
-                if int(block.get("type", 1)) != 0:
+                if int(block.get("type", 0)) != 0:
                     continue
                 lines = block.get("lines", [])
                 union_bbox = _union_line_bboxes(lines) or block.get("bbox")
@@ -186,7 +186,7 @@ def _extract_with_pymupdf(context: PipelineContext) -> bool:
 
 
 def _load_pdf_plain_text(pdf_path: str, *, warnings: List[str] | None = None) -> str:
-    """Extract full document text with PyMuPDF plain mode."""
+    """Extract full document text with PyMuPDF (plain text, then block spans)."""
     try:
         import fitz  # type: ignore
     except Exception as exc:
@@ -195,7 +195,24 @@ def _load_pdf_plain_text(pdf_path: str, *, warnings: List[str] | None = None) ->
         return ""
     try:
         with fitz.open(pdf_path) as doc:
-            return "".join(doc.load_page(i).get_text("text") for i in range(doc.page_count))
+            plain = "".join(doc.load_page(i).get_text("text") for i in range(doc.page_count))
+            if len(plain.strip()) >= 50:
+                return plain
+
+            block_parts: List[str] = []
+            for page_idx in range(doc.page_count):
+                page = doc.load_page(page_idx)
+                page_dict = page.get_text("dict")
+                for block in page_dict.get("blocks", []):
+                    if int(block.get("type", 0)) != 0:
+                        continue
+                    for line in block.get("lines", []):
+                        for span in line.get("spans", []):
+                            text = str(span.get("text", "")).strip()
+                            if text:
+                                block_parts.append(text)
+            block_text = " ".join(block_parts)
+            return block_text if len(block_text.strip()) >= len(plain.strip()) else plain
     except Exception as exc:
         if warnings is not None:
             warnings.append(f"pymupdf_plain_text_failed:{exc}")

@@ -68,11 +68,10 @@ def run_pipeline(
     )
     try:
         context = pass1_embed.run(context, embedding_model=embedding_model)
+        context = pass2_bib_resolve.run(context, resolver=resolver)
+        context = pass3_candidate_search.run(context, embedding_model=embedding_model)
     finally:
         embedding_model.release()
-
-    context = pass2_bib_resolve.run(context, resolver=resolver)
-    context = pass3_candidate_search.run(context)
 
     reranker = RerankerModel(
         model_name=context.config.rerank_model,
