@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, MutableMapping, Optional, Tuple
 
-from .openalex import OpenAlexClient
+from .openalex import OpenAlexClient, OpenAlexRequestError
 
 DOI_CORE_REGEX = re.compile(r"^10\.\d{4,9}/\S+$", flags=re.IGNORECASE)
 DOI_EXTRACT_REGEX = re.compile(r"(10\.\d{4,9}/\S+)", flags=re.IGNORECASE)
@@ -44,22 +44,49 @@ def is_valid_doi(value: str) -> bool:
     return bool(DOI_CORE_REGEX.match(normalized))
 
 
+def _log_openalex_warning(
+    artifacts: Optional[MutableMapping[str, Any]],
+    message: str,
+) -> None:
+    if artifacts is None:
+        return
+    warnings = artifacts.setdefault("openalex_warnings", [])
+    if isinstance(warnings, list):
+        warnings.append(message)
+
+
 class CanonicalDoiResolver:
     def __init__(self, openalex: OpenAlexClient, match_threshold: float = 0.92) -> None:
         self.openalex = openalex
         self.match_threshold = match_threshold
 
-    def resolve(self, doi: str) -> Tuple[str, Dict[str, str]]:
+    def resolve(
+        self,
+        doi: str,
+        *,
+        artifacts: Optional[MutableMapping[str, Any]] = None,
+    ) -> Tuple[str, Dict[str, str]]:
         """
         Return (canonical_doi, alias_map).
 
         alias_map stores alias_doi -> canonical_doi pairs.
+        On OpenAlex rate-limit or transport failure, returns the normalized DOI
+        without raising.
         """
         normalized = normalize_doi(doi)
         if not is_valid_doi(normalized):
             return normalized, {}
 
-        work = self.openalex.get_work_by_doi(normalized)
+        try:
+            work = self.openalex.get_work_by_doi(normalized)
+        except OpenAlexRequestError as exc:
+            warning = (
+                f"OpenAlex lookup failed for DOI {normalized} "
+                f"(HTTP {exc.status_code}); using normalized DOI without canonicalization"
+            )
+            _log_openalex_warning(artifacts, warning)
+            return normalized, {}
+
         if not work:
             return normalized, {}
 
@@ -126,16 +153,34 @@ class CanonicalDoiResolver:
                 hits += 1
         return hits / max(1, len(reference_authors))
 
-    def search_and_resolve_reference(self, reference: Dict[str, Any]) -> Tuple[Optional[str], Dict[str, str]]:
+    def search_and_resolve_reference(
+        self,
+        reference: Dict[str, Any],
+        *,
+        artifacts: Optional[MutableMapping[str, Any]] = None,
+    ) -> Tuple[Optional[str], Dict[str, str]]:
         ref_doi = normalize_doi(str(reference.get("doi") or ""))
         if is_valid_doi(ref_doi):
-            return self.resolve(ref_doi)
+            resolved, aliases = self.resolve(ref_doi, artifacts=artifacts)
+            if resolved:
+                return resolved, aliases
+            return None, {}
 
         query = str(reference.get("title") or reference.get("raw_text") or "").strip()
         if not query:
             return None, {}
 
-        results = self.openalex.search_work(query, per_page=5)
+        try:
+            results = self.openalex.search_work(query, per_page=5)
+        except OpenAlexRequestError as exc:
+            ref_index = reference.get("ref_index")
+            warning = (
+                f"OpenAlex search skipped for ref_index={ref_index} "
+                f"(HTTP {exc.status_code}); leaving resolved_doi unset"
+            )
+            _log_openalex_warning(artifacts, warning)
+            return None, {}
+
         best_doi: Optional[str] = None
         best_score = 0.0
         best_aliases: Dict[str, str] = {}

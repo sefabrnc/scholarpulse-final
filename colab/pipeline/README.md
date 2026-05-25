@@ -2,6 +2,32 @@
 
 > **Türkçe kurulum rehberi (Colab + Cloudflare + CE):** [`docs/KURULUM_REHBERI_COLAB_CF.md`](../../docs/KURULUM_REHBERI_COLAB_CF.md)
 
+## Colab repo sync
+
+Public repo: `https://github.com/sefabrnc/scholarpulse-final.git` (`main`).
+
+If `git clone` fails with exit code 128 (directory already exists or stale half-clone), use fetch/reset instead of blind re-clone:
+
+```python
+import subprocess
+from pathlib import Path
+
+REPO = Path("/content/scholarpulse-final")
+if (REPO / ".git").is_dir():
+    subprocess.run(["git", "-C", str(REPO), "fetch", "origin"], check=True)
+    subprocess.run(["git", "-C", str(REPO), "reset", "--hard", "origin/main"], check=True)
+else:
+    subprocess.run(
+        ["git", "clone", "--depth", "1", "--branch", "main",
+         "https://github.com/sefabrnc/scholarpulse-final.git", str(REPO)],
+        check=True,
+    )
+```
+
+Verify sync: `python -c "from colab.pipeline.version import print_version_banner, verify_critical_files; print_version_banner(); verify_critical_files()"`
+
+Full troubleshooting (Drive zip, PAT): [`docs/KURULUM_REHBERI_COLAB_CF.md`](../../docs/KURULUM_REHBERI_COLAB_CF.md) section **Bölüm 2.0**.
+
 This package provides a runnable 8-pass Colab ingestion backbone wired to
 `POST /api/cite/bulk-ingest`, including:
 
@@ -82,6 +108,9 @@ set SP_VECTOR_SCORE_THRESHOLD=0.50
 set SP_BIB_MATCH_THRESHOLD=0.92
 set SP_OPENALEX_BASE_URL=https://api.openalex.org
 set SP_OPENALEX_MAILTO=you@example.com
+set SP_OPENALEX_MIN_DELAY_S=0.2
+set SP_SKIP_BIB_RESOLVE=0
+set SP_BIB_RESOLVE_MAX_REFS=
 set SP_UNPAYWALL_EMAIL=you@example.com
 set SP_AUTO_FETCH_PDF=1
 set SP_PDF_CACHE_DIR=/tmp/scholarpulse/pdfs
@@ -95,6 +124,33 @@ set SP_CHECKPOINT_EVERY=25
 set SP_RESUME_CHECKPOINT=%SP_CHECKPOINT_DIR%/stage.sqlite
 set SP_INGEST_API_URL=http://localhost:8787/api/cite/bulk-ingest
 set SP_INGEST_TOKEN=your_token
+```
+
+### OpenAlex rate limits (pass2 bibliography resolve)
+
+OpenAlex throttles anonymous clients (~1 req/s). With `mailto` you join the
+[polite pool](https://docs.openalex.org/how-to-use-the-api/rate-limits-and-authentication)
+(~5 req/s). The client retries HTTP 429/503 with exponential backoff and honors
+`Retry-After`.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `SP_OPENALEX_MAILTO` | _(unset)_ | Your email for the polite pool — **strongly recommended** |
+| `SP_OPENALEX_MIN_DELAY_S` | `0.2` with mailto, `1.0` without | Minimum delay between OpenAlex requests |
+| `SP_BIB_RESOLVE_MAX_REFS` | all refs | Cap OpenAlex **search** calls per paper (DOI lookups still run) |
+| `SP_SKIP_BIB_RESOLVE=1` | off | Skip OpenAlex reference resolution (paper DOI still canonicalized) |
+
+Debug runs (`debug_edge_pipeline`) default `SP_BIB_RESOLVE_MAX_REFS=20` and warn
+when `SP_OPENALEX_MAILTO` is missing. Papers like *Attention Is All You Need*
+have ~150 references; without mailto or a cap you will likely hit HTTP 429.
+
+Colab example:
+
+```python
+import os
+os.environ["SP_OPENALEX_MAILTO"] = "you@example.com"  # polite pool
+os.environ["SP_BIB_RESOLVE_MAX_REFS"] = "20"            # quick debug
+# os.environ["SP_SKIP_BIB_RESOLVE"] = "1"               # skip ref resolve entirely
 ```
 
 Cross-paper re-matching (pass8) reads pending citations from the local

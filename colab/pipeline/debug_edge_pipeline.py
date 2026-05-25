@@ -3,6 +3,11 @@
 Run from repo root:
   python -m colab.pipeline.debug_edge_pipeline --doi 10.48550/arXiv.1706.03762
   SP_USE_REAL_MODELS=0 python -m colab.pipeline.debug_edge_pipeline --doi ...
+
+OpenAlex rate limits: set SP_OPENALEX_MAILTO for the polite pool and optionally
+SP_BIB_RESOLVE_MAX_REFS=20 to avoid 100+ sequential searches on papers like
+Attention Is All You Need (~154 refs). Use SP_SKIP_BIB_RESOLVE=1 to skip ref
+resolution entirely during stub/debug runs.
 """
 
 from __future__ import annotations
@@ -12,6 +17,7 @@ import json
 import os
 import re
 import sys
+import warnings
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -21,7 +27,15 @@ if str(REPO_ROOT) not in sys.path:
 from colab.pipeline.clients.canonicalization import CanonicalDoiResolver, normalize_doi
 from colab.pipeline.clients.grobid import GrobidClient
 from colab.pipeline.clients.openalex import OpenAlexClient
-from colab.pipeline.config import PipelineConfig
+from colab.pipeline.config import (
+    PipelineConfig,
+    get_bib_resolve_max_refs,
+    get_openalex_backoff_base_s,
+    get_openalex_mailto,
+    get_openalex_max_retries,
+    get_openalex_min_delay_s,
+    get_skip_bib_resolve,
+)
 from colab.pipeline.main import build_context
 from colab.pipeline.models import EmbeddingModel, RerankerModel
 from colab.pipeline.stages import (
@@ -37,6 +51,28 @@ from colab.pipeline.stages import (
 from colab.pipeline.stages.pass3_candidate_search import MARKER_REGEX, extract_marker_indices
 
 MARKER_IN_TEXT = re.compile(r"\[(\d+)\]")
+
+
+def _apply_debug_openalex_defaults() -> list[str]:
+    """Set conservative OpenAlex defaults for debug runs; return warning strings."""
+    notices: list[str] = []
+    os.environ.setdefault("SP_BIB_RESOLVE_MAX_REFS", "20")
+    if not os.getenv("SP_OPENALEX_MAILTO"):
+        notices.append(
+            "SP_OPENALEX_MAILTO is not set. OpenAlex uses the shared pool (~1 req/s) "
+            "and may return HTTP 429 on papers with many references. "
+            "Set SP_OPENALEX_MAILTO=you@example.com for the polite pool (~5 req/s)."
+        )
+    if get_skip_bib_resolve():
+        notices.append("SP_SKIP_BIB_RESOLVE=1: pass2 will skip OpenAlex reference resolution.")
+    else:
+        max_refs = get_bib_resolve_max_refs()
+        if max_refs is not None:
+            notices.append(
+                f"SP_BIB_RESOLVE_MAX_REFS={max_refs}: only the first {max_refs} "
+                "unresolved references will hit OpenAlex search."
+            )
+    return notices
 
 
 def _count_cite_sentences(nodes) -> dict:
@@ -79,11 +115,22 @@ def _ref_index_stats(references: list, artifacts: dict | None = None) -> dict:
 
 
 def run_debug(doi: str, pdf_path: str | None, use_real: bool) -> dict:
+    openalex_notices = _apply_debug_openalex_defaults()
+    for notice in openalex_notices:
+        warnings.warn(notice, stacklevel=2)
+        print(f"WARNING: {notice}", file=sys.stderr)
+
     os.environ["SP_USE_REAL_MODELS"] = "1" if use_real else "0"
     config = PipelineConfig()
     context = build_context(doi=doi, config=config, pdf_path=pdf_path)
 
-    openalex = OpenAlexClient(base_url=config.openalex_base_url)
+    openalex = OpenAlexClient(
+        base_url=config.openalex_base_url,
+        mailto=get_openalex_mailto(),
+        min_delay_s=get_openalex_min_delay_s(),
+        max_retries=get_openalex_max_retries(),
+        backoff_base_s=get_openalex_backoff_base_s(),
+    )
     resolver = CanonicalDoiResolver(openalex=openalex, match_threshold=config.bib_match_threshold)
     grobid = GrobidClient(base_url=config.grobid_base_url)
 
@@ -126,6 +173,10 @@ def run_debug(doi: str, pdf_path: str | None, use_real: bool) -> dict:
         "doi_input": doi,
         "doi_canonical": context.paper.doi,
         "use_real_models": use_real,
+        "openalex_mailto_set": bool(get_openalex_mailto()),
+        "bib_resolve_max_refs": get_bib_resolve_max_refs(),
+        "skip_bib_resolve": get_skip_bib_resolve(),
+        "openalex_notices": openalex_notices,
         "grobid_route": context.artifacts.get("grobid_route"),
         "pass0": pre0,
         "references": ref_stats,

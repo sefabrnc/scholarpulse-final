@@ -28,6 +28,46 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_optional_int(name: str) -> Optional[int]:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return None
+    return int(value.strip())
+
+
+def _env_optional_float(name: str) -> Optional[float]:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return None
+    return float(value.strip())
+
+
+def get_openalex_mailto() -> Optional[str]:
+    """Read OpenAlex polite-pool email at call time (not import time)."""
+    value = os.getenv("SP_OPENALEX_MAILTO")
+    return value.strip() if value and value.strip() else None
+
+
+def get_skip_bib_resolve() -> bool:
+    return _env_bool("SP_SKIP_BIB_RESOLVE", False)
+
+
+def get_bib_resolve_max_refs() -> Optional[int]:
+    return _env_optional_int("SP_BIB_RESOLVE_MAX_REFS")
+
+
+def get_openalex_min_delay_s() -> Optional[float]:
+    return _env_optional_float("SP_OPENALEX_MIN_DELAY_S")
+
+
+def get_openalex_max_retries() -> int:
+    return _env_int("SP_OPENALEX_MAX_RETRIES", 6)
+
+
+def get_openalex_backoff_base_s() -> float:
+    return _env_float("SP_OPENALEX_BACKOFF_BASE_S", 1.0)
+
+
 @dataclass(frozen=True)
 class PipelineConfig:
     min_extract_chars: int = _env_int("SP_MIN_EXTRACT_CHARS", 50)
@@ -41,6 +81,11 @@ class PipelineConfig:
     bib_match_threshold: float = _env_float("SP_BIB_MATCH_THRESHOLD", 0.92)
     openalex_base_url: str = _env_str("SP_OPENALEX_BASE_URL", "https://api.openalex.org")
     openalex_mailto: Optional[str] = os.getenv("SP_OPENALEX_MAILTO")
+    openalex_min_delay_s: Optional[float] = _env_optional_float("SP_OPENALEX_MIN_DELAY_S")
+    openalex_max_retries: int = _env_int("SP_OPENALEX_MAX_RETRIES", 6)
+    openalex_backoff_base_s: float = _env_float("SP_OPENALEX_BACKOFF_BASE_S", 1.0)
+    skip_bib_resolve: bool = _env_bool("SP_SKIP_BIB_RESOLVE", False)
+    bib_resolve_max_refs: Optional[int] = _env_optional_int("SP_BIB_RESOLVE_MAX_REFS")
     unpaywall_email: Optional[str] = os.getenv("SP_UNPAYWALL_EMAIL")
     pdf_cache_dir: str = _env_str("SP_PDF_CACHE_DIR", "/tmp/scholarpulse/pdfs")
     pdf_fetch_timeout_s: int = _env_int("SP_PDF_FETCH_TIMEOUT_S", 90)

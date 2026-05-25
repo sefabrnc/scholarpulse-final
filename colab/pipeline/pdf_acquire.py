@@ -8,7 +8,13 @@ from typing import Any, Dict, Optional, Tuple
 from .clients.openalex import OpenAlexClient
 from .clients.pdf_fetch import PdfFetcher, is_valid_pdf_file
 from .clients.pdf_resolver import PdfResolver
-from .config import PipelineConfig
+from .config import (
+    PipelineConfig,
+    get_openalex_backoff_base_s,
+    get_openalex_mailto,
+    get_openalex_max_retries,
+    get_openalex_min_delay_s,
+)
 
 
 class PdfAcquisitionError(RuntimeError):
@@ -54,7 +60,10 @@ def ensure_pdf_for_paper(
 
     client = openalex or OpenAlexClient(
         base_url=config.openalex_base_url,
-        mailto=config.openalex_mailto,
+        mailto=get_openalex_mailto() or config.openalex_mailto,
+        min_delay_s=get_openalex_min_delay_s() or config.openalex_min_delay_s,
+        max_retries=get_openalex_max_retries(),
+        backoff_base_s=get_openalex_backoff_base_s(),
     )
     resolver = PdfResolver(
         client,

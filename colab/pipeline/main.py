@@ -10,7 +10,13 @@ from typing import Any, Dict
 from .clients.canonicalization import CanonicalDoiResolver, normalize_doi
 from .clients.grobid import GrobidClient
 from .clients.openalex import OpenAlexClient
-from .config import PipelineConfig
+from .config import (
+    PipelineConfig,
+    get_openalex_backoff_base_s,
+    get_openalex_mailto,
+    get_openalex_max_retries,
+    get_openalex_min_delay_s,
+)
 from .models import EmbeddingModel, IntentModel, RerankerModel, compute_algorithm_version
 from .stages import (
     pass0_5_reference_parser,
@@ -55,7 +61,13 @@ def run_pipeline(
     *,
     checkpoint_store: CheckpointStore | None = None,
 ) -> Dict:
-    openalex = OpenAlexClient(base_url=context.config.openalex_base_url)
+    openalex = OpenAlexClient(
+        base_url=context.config.openalex_base_url,
+        mailto=get_openalex_mailto(),
+        min_delay_s=get_openalex_min_delay_s(),
+        max_retries=get_openalex_max_retries(),
+        backoff_base_s=get_openalex_backoff_base_s(),
+    )
     resolver = CanonicalDoiResolver(openalex=openalex, match_threshold=context.config.bib_match_threshold)
     grobid = GrobidClient(base_url=context.config.grobid_base_url)
 

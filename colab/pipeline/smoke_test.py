@@ -848,6 +848,231 @@ class PipelineSmokeTest(unittest.TestCase):
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
+    def test_openalex_retries_429_then_succeeds(self) -> None:
+        import time
+        from unittest.mock import MagicMock, patch
+
+        from colab.pipeline.clients.openalex import OpenAlexClient
+
+        ok_response = MagicMock()
+        ok_response.status_code = 200
+        ok_response.json.return_value = {"results": [{"id": "W1", "title": "Test"}]}
+        ok_response.raise_for_status = MagicMock()
+
+        rate_limited = MagicMock()
+        rate_limited.status_code = 429
+        rate_limited.headers = {"Retry-After": "0"}
+        rate_limited.raise_for_status = MagicMock()
+
+        client = OpenAlexClient(
+            base_url="https://api.openalex.org",
+            mailto="test@example.com",
+            min_delay_s=0.0,
+        )
+
+        with patch("colab.pipeline.clients.openalex.requests.get", side_effect=[rate_limited, ok_response]) as mock_get:
+            with patch("colab.pipeline.clients.openalex.time.sleep") as mock_sleep:
+                payload = client.search_work("attention is all you need")
+
+        self.assertEqual(payload["results"][0]["id"], "W1")
+        self.assertEqual(mock_get.call_count, 2)
+        mock_sleep.assert_called()
+
+    def test_openalex_honors_retry_after_on_503(self) -> None:
+        from unittest.mock import MagicMock, patch
+
+        from colab.pipeline.clients.openalex import OpenAlexClient
+
+        ok_response = MagicMock()
+        ok_response.status_code = 200
+        ok_response.json.return_value = {"id": "W1", "doi": "https://doi.org/10.1000/x"}
+        ok_response.raise_for_status = MagicMock()
+
+        unavailable = MagicMock()
+        unavailable.status_code = 503
+        unavailable.headers = {"Retry-After": "2.5"}
+        unavailable.raise_for_status = MagicMock()
+
+        client = OpenAlexClient(
+            base_url="https://api.openalex.org",
+            mailto="test@example.com",
+            min_delay_s=0.0,
+        )
+
+        with patch("colab.pipeline.clients.openalex.requests.get", side_effect=[unavailable, ok_response]):
+            with patch("colab.pipeline.clients.openalex.time.sleep") as mock_sleep:
+                work = client.get_work_by_doi("10.1000/x")
+
+        self.assertEqual(work["id"], "W1")
+        mock_sleep.assert_any_call(2.5)
+
+    def test_openalex_search_work_cache(self) -> None:
+        from unittest.mock import MagicMock, patch
+
+        from colab.pipeline.clients.openalex import OpenAlexClient
+
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {"results": []}
+        response.raise_for_status = MagicMock()
+
+        client = OpenAlexClient(
+            base_url="https://api.openalex.org",
+            mailto="test@example.com",
+            min_delay_s=0.0,
+        )
+
+        with patch("colab.pipeline.clients.openalex.requests.get", return_value=response) as mock_get:
+            client.search_work("same query")
+            client.search_work("same query")
+
+        self.assertEqual(mock_get.call_count, 1)
+
+    def test_openalex_raises_after_exhausted_retries(self) -> None:
+        from unittest.mock import MagicMock, patch
+
+        from colab.pipeline.clients.openalex import OpenAlexClient, OpenAlexRequestError
+
+        rate_limited = MagicMock()
+        rate_limited.status_code = 429
+        rate_limited.headers = {}
+
+        client = OpenAlexClient(
+            base_url="https://api.openalex.org",
+            mailto="test@example.com",
+            min_delay_s=0.0,
+            max_retries=2,
+        )
+
+        with patch("colab.pipeline.clients.openalex.requests.get", return_value=rate_limited):
+            with patch("colab.pipeline.clients.openalex.time.sleep"):
+                with self.assertRaises(OpenAlexRequestError) as ctx:
+                    client.get_work_by_doi("10.1000/x")
+
+        self.assertEqual(ctx.exception.status_code, 429)
+
+    def test_resolve_graceful_fallback_on_openalex_429(self) -> None:
+        from colab.pipeline.clients.canonicalization import CanonicalDoiResolver
+        from colab.pipeline.clients.openalex import OpenAlexClient, OpenAlexRequestError
+
+        class RateLimitedOpenAlex(OpenAlexClient):
+            def get_work_by_doi(self, doi: str):
+                raise OpenAlexRequestError(429, f"https://api.openalex.org/works/{doi}")
+
+        resolver = CanonicalDoiResolver(RateLimitedOpenAlex("https://api.openalex.org"))
+        artifacts: dict = {}
+        canonical, aliases = resolver.resolve("10.48550/arxiv.1706.03762", artifacts=artifacts)
+
+        self.assertEqual(canonical, "10.48550/arxiv.1706.03762")
+        self.assertEqual(aliases, {})
+        self.assertTrue(artifacts.get("openalex_warnings"))
+
+    def test_search_and_resolve_reference_skips_on_429(self) -> None:
+        from colab.pipeline.clients.canonicalization import CanonicalDoiResolver
+        from colab.pipeline.clients.openalex import OpenAlexClient, OpenAlexRequestError
+
+        class RateLimitedSearchOpenAlex(OpenAlexClient):
+            def search_work(self, query: str, per_page: int = 5):
+                raise OpenAlexRequestError(429, "https://api.openalex.org/works")
+
+        resolver = CanonicalDoiResolver(RateLimitedSearchOpenAlex("https://api.openalex.org"))
+        artifacts: dict = {}
+        resolved, aliases = resolver.search_and_resolve_reference(
+            {"ref_index": 3, "title": "Attention Is All You Need"},
+            artifacts=artifacts,
+        )
+
+        self.assertIsNone(resolved)
+        self.assertEqual(aliases, {})
+        self.assertTrue(artifacts.get("openalex_warnings"))
+
+    def test_pass2_survives_openalex_429_on_paper_doi(self) -> None:
+        from colab.pipeline.clients.canonicalization import CanonicalDoiResolver
+        from colab.pipeline.clients.openalex import OpenAlexClient, OpenAlexRequestError
+        from colab.pipeline.stages import pass2_bib_resolve
+        from colab.pipeline.types import PaperInput, PipelineContext
+
+        class RateLimitedOpenAlex(OpenAlexClient):
+            def get_work_by_doi(self, doi: str):
+                raise OpenAlexRequestError(429, f"https://api.openalex.org/works/{doi}")
+
+            def search_work(self, query: str, per_page: int = 5):
+                raise OpenAlexRequestError(429, "https://api.openalex.org/works")
+
+        doi_input = "10.48550/arxiv.1706.03762"
+        context = PipelineContext(
+            config=PipelineConfig(),
+            paper=PaperInput(doi=doi_input, pdf_path="x.pdf", metadata={}),
+        )
+        context.references = [
+            {"ref_index": 1, "raw_text": "Some ref", "title": "Some Paper"},
+        ]
+
+        resolver = CanonicalDoiResolver(RateLimitedOpenAlex("https://api.openalex.org"))
+        context = pass2_bib_resolve.run(context, resolver)
+
+        self.assertEqual(context.paper.doi, doi_input)
+        self.assertIsNone(context.references[0].get("resolved_doi"))
+        self.assertTrue(context.warnings)
+        self.assertTrue(context.artifacts.get("openalex_warnings"))
+
+    def test_pass2_skip_bib_resolve_only_normalizes_refs(self) -> None:
+        from colab.pipeline.stages import pass2_bib_resolve
+        from colab.pipeline.types import PaperInput, PipelineContext
+        from unittest.mock import MagicMock
+
+        os.environ["SP_SKIP_BIB_RESOLVE"] = "1"
+        try:
+            context = PipelineContext(
+                config=PipelineConfig(),
+                paper=PaperInput(doi="10.1000/paper", pdf_path="x.pdf", metadata={}),
+            )
+            context.references = [
+                {"ref_index": 0, "parse_backend": "grobid", "raw_text": "A"},
+            ]
+
+            resolver = MagicMock()
+            context = pass2_bib_resolve.run(context, resolver)
+
+            resolver.resolve.assert_not_called()
+            resolver.search_and_resolve_reference.assert_not_called()
+            self.assertEqual(context.references[0]["ref_index"], 1)
+            self.assertTrue(context.artifacts.get("bib_resolve_skipped"))
+        finally:
+            os.environ.pop("SP_SKIP_BIB_RESOLVE", None)
+
+    def test_pass2_caps_openalex_searches(self) -> None:
+        from unittest.mock import MagicMock, patch
+
+        from colab.pipeline.stages import pass2_bib_resolve
+        from colab.pipeline.types import PaperInput, PipelineContext
+
+        os.environ["SP_BIB_RESOLVE_MAX_REFS"] = "1"
+        try:
+            context = PipelineContext(
+                config=PipelineConfig(),
+                paper=PaperInput(doi="10.1000/paper", pdf_path="x.pdf", metadata={}),
+            )
+            context.references = [
+                {"ref_index": 1, "raw_text": "First ref", "title": "First"},
+                {"ref_index": 2, "raw_text": "Second ref", "title": "Second"},
+            ]
+
+            resolver = MagicMock()
+            resolver.resolve.return_value = ("10.1000/paper", {})
+            resolver.search_and_resolve_reference.side_effect = [
+                ("10.1000/a", {}),
+                ("10.1000/b", {}),
+            ]
+
+            context = pass2_bib_resolve.run(context, resolver)
+            self.assertEqual(resolver.search_and_resolve_reference.call_count, 1)
+            self.assertEqual(context.references[0].get("resolved_doi"), "10.1000/a")
+            self.assertIsNone(context.references[1].get("resolved_doi"))
+            self.assertEqual(context.artifacts.get("bib_resolve_openalex_searches"), 1)
+        finally:
+            os.environ.pop("SP_BIB_RESOLVE_MAX_REFS", None)
+
 
 def main() -> int:
     suite = unittest.defaultTestLoader.loadTestsFromTestCase(PipelineSmokeTest)
