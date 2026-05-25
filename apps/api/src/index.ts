@@ -67,6 +67,14 @@ type CiteEdge = {
   edgeType: string;
   weight: number | null;
   evidenceRef: string | null;
+  confidenceTier: string | null;
+};
+
+type PendingBibEntry = {
+  sourceDoi: string;
+  targetDoi: string;
+  refIndex: number | null;
+  bibText: string | null;
 };
 
 type VectorPayloadEntry = {
@@ -84,9 +92,12 @@ type BulkIngestPayload = {
   nodes: CiteNode[];
   edges: CiteEdge[];
   vectors: BulkIngestVectors;
+  edgeSupersedes?: EdgeRevalidateUpdate[];
   meta?: {
     paperCount: number | null;
     doiAliases?: Record<string, string>;
+    pendingBibs?: PendingBibEntry[];
+    algorithmVersion?: string | null;
   };
 };
 
@@ -1144,22 +1155,114 @@ function normalizeEdge(input: unknown, index: number): CiteEdge {
     throw new Error(`edges[${index}] must be an object`);
   }
   const id = toOptionalString(input.id);
-  const fromNodeId = toOptionalString(input.fromNodeId);
-  const toNodeId = toOptionalString(input.toNodeId);
-  const edgeType = toOptionalString(input.edgeType);
+  const fromNodeId = toOptionalString(input.fromNodeId ?? input.from_node_id);
+  const toNodeId = toOptionalString(input.toNodeId ?? input.to_node_id);
+  const edgeType = toOptionalString(input.edgeType ?? input.edge_type);
   if (!id || !fromNodeId || !toNodeId || !edgeType) {
     throw new Error(
       `edges[${index}] requires id, fromNodeId, toNodeId, and edgeType`
     );
   }
+  const evidenceRef = toOptionalString(input.evidenceRef ?? input.evidence_ref);
+  const explicitTier =
+    toOptionalString(input.confidenceTier ?? input.confidence_tier) ??
+    parseEvidenceRef(evidenceRef).confidenceTier;
   return {
     id,
     fromNodeId,
     toNodeId,
     edgeType,
     weight: toOptionalNumber(input.weight),
-    evidenceRef: toOptionalString(input.evidenceRef)
+    evidenceRef,
+    confidenceTier: explicitTier
   };
+}
+
+function normalizePendingBib(input: unknown, index: number): PendingBibEntry | null {
+  if (!isRecord(input)) {
+    throw new Error(`meta.pending_bibs[${index}] must be an object`);
+  }
+  const sourceDoi = normalizeDoiForStorage(String(input.source_doi ?? input.sourceDoi ?? ""));
+  const targetDoi = normalizeDoiForStorage(String(input.target_doi ?? input.targetDoi ?? ""));
+  if (!sourceDoi || !targetDoi) {
+    return null;
+  }
+  const refIndexRaw = input.ref_index ?? input.refIndex;
+  const refIndex =
+    typeof refIndexRaw === "number" && Number.isFinite(refIndexRaw)
+      ? Math.trunc(refIndexRaw)
+      : null;
+  const bibText = toOptionalString(input.bib_text ?? input.bibText);
+  return { sourceDoi, targetDoi, refIndex, bibText };
+}
+
+function parsePendingBibsFromMeta(meta: unknown): PendingBibEntry[] {
+  if (!isRecord(meta)) {
+    return [];
+  }
+  const raw = meta.pending_bibs ?? meta.pendingBibs;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const entries: PendingBibEntry[] = [];
+  for (let idx = 0; idx < raw.length; idx += 1) {
+    const normalized = normalizePendingBib(raw[idx], idx);
+    if (normalized) {
+      entries.push(normalized);
+    }
+  }
+  return entries;
+}
+
+function pendingBibRowId(entry: PendingBibEntry): string {
+  const digest = hashString(`${entry.sourceDoi}|${entry.targetDoi}|${entry.refIndex ?? ""}`)
+    .toString(16)
+    .padStart(8, "0");
+  return `pending_${digest}`;
+}
+
+async function insertPendingBibsFromBulkIngest(
+  db: D1Database,
+  entries: PendingBibEntry[],
+  nowSec: number
+): Promise<number> {
+  if (entries.length === 0) {
+    return 0;
+  }
+  const systemUserId = "colab";
+  const statements: D1PreparedStatement[] = [];
+  for (const entry of entries) {
+    const id = pendingBibRowId(entry);
+    statements.push(
+      db.prepare(
+        `INSERT INTO pending_bibs (
+          id, user_id, source_ref, status, retry_count, next_retry_at, payload_json, created_at, updated_at
+        ) VALUES (?, ?, ?, 'queued', 0, NULL, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          payload_json = excluded.payload_json,
+          status = CASE
+            WHEN pending_bibs.status IN ('completed', 'done') THEN pending_bibs.status
+            ELSE 'queued'
+          END,
+          updated_at = excluded.updated_at`
+      ).bind(
+        id,
+        systemUserId,
+        entry.targetDoi,
+        JSON.stringify({
+          kind: "cite_resolve",
+          source_doi: entry.sourceDoi,
+          target_doi: entry.targetDoi,
+          ref_index: entry.refIndex,
+          bib_text: entry.bibText
+        }),
+        nowSec,
+        nowSec
+      )
+    );
+  }
+  await db.batch(statements);
+  return entries.length;
 }
 
 function normalizeVectorMetadata(
@@ -1239,6 +1342,14 @@ function parseBulkPayload(input: unknown): BulkIngestPayload {
   const vectors = normalizeVectors(input.vectors);
   let paperCount: number | null = null;
   let doiAliases: Record<string, string> | undefined;
+  let pendingBibs: PendingBibEntry[] | undefined;
+  let algorithmVersion: string | null = null;
+  let edgeSupersedes: EdgeRevalidateUpdate[] | undefined;
+  if (Array.isArray(input.edge_supersedes)) {
+    edgeSupersedes = input.edge_supersedes.map((entry: unknown, idx: number) =>
+      normalizeEdgeRevalidateUpdate(entry, idx)
+    );
+  }
   if (isRecord(input.meta)) {
     const rawPaperCount = toOptionalNumber(input.meta.paperCount ?? input.meta.paper_count);
     if (rawPaperCount !== null && Number.isFinite(rawPaperCount) && rawPaperCount > 0) {
@@ -1258,8 +1369,20 @@ function parseBulkPayload(input: unknown): BulkIngestPayload {
         doiAliases = undefined;
       }
     }
+    const parsedPendingBibs = parsePendingBibsFromMeta(input.meta);
+    if (parsedPendingBibs.length > 0) {
+      pendingBibs = parsedPendingBibs;
+    }
+    algorithmVersion =
+      toOptionalString(input.meta.algorithm_version ?? input.meta.algorithmVersion) ?? null;
   }
-  return { nodes, edges, vectors, meta: { paperCount, doiAliases } };
+  return {
+    nodes,
+    edges,
+    vectors,
+    edgeSupersedes,
+    meta: { paperCount, doiAliases, pendingBibs, algorithmVersion }
+  };
 }
 
 function countPapersInChunk(payload: BulkIngestPayload): number {
@@ -2193,6 +2316,51 @@ async function fetchEdgesForRevalidation(
   return { items, nextCursor };
 }
 
+async function fetchIncomingCrossCitations(db: D1Database, targetDoi: string, limit: number) {
+  const result = await db
+    .prepare(
+      `SELECT
+        e.id AS edge_id,
+        e.from_node_id AS source_id,
+        e.to_node_id AS old_target_id,
+        e.evidence_ref,
+        src.doi_norm AS source_doi,
+        src.title AS source_text,
+        dst.doi_norm AS target_doi
+      FROM cite_edges e
+      JOIN cite_nodes src ON src.id = e.from_node_id
+      JOIN cite_nodes dst ON dst.id = e.to_node_id
+      WHERE dst.doi_norm = ?
+        AND dst.node_type = 'reference'
+        AND COALESCE(e.status, 'active') = 'active'
+      ORDER BY e.created_at ASC
+      LIMIT ?`
+    )
+    .bind(targetDoi, limit)
+    .all<{
+      edge_id: string;
+      source_id: string;
+      old_target_id: string;
+      evidence_ref: string | null;
+      source_doi: string | null;
+      source_text: string;
+      target_doi: string | null;
+    }>();
+  return result.results ?? [];
+}
+
+function parseRefIndexFromEvidenceRef(evidenceRef: string | null): number | null {
+  if (!evidenceRef) {
+    return null;
+  }
+  const match = /ref:(\d+)/i.exec(evidenceRef);
+  if (!match) {
+    return null;
+  }
+  const value = Number.parseInt(match[1], 10);
+  return Number.isFinite(value) ? value : null;
+}
+
 async function applyEdgeRevalidationUpdates(
   db: D1Database,
   updates: EdgeRevalidateUpdate[]
@@ -2398,6 +2566,42 @@ app.get("/api/internal/active-users", async (c) => {
     const message = error instanceof Error ? error.message : "Active user query failed";
     logStructured(c, "error", "internal.active_users.failed", { message });
     return jsonError(c, 500, "ACTIVE_USERS_QUERY_FAILED", message);
+  }
+});
+
+app.get("/api/internal/incoming-citations", async (c) => {
+  const tokenError = requireInternalToken(c);
+  if (tokenError) {
+    const status = tokenError.error.code === "INTERNAL_TOKEN_MISSING" ? 500 : 401;
+    return jsonError(c, status, tokenError.error.code, tokenError.error.message);
+  }
+
+  const rawDoi = toOptionalString(c.req.query("target_doi") ?? c.req.query("doi"));
+  const targetDoi = rawDoi ? normalizeDoiForStorage(rawDoi) : null;
+  if (!targetDoi) {
+    return jsonError(c, 400, "MISSING_DOI", "target_doi query parameter is required");
+  }
+
+  const limit = parsePositiveInt(c.req.query("limit"), INTERNAL_DEFAULT_PAGE_LIMIT, INTERNAL_MAX_PAGE_LIMIT);
+  try {
+    const rows = await fetchIncomingCrossCitations(c.env.DB, targetDoi, limit);
+    return c.json({
+      ok: true,
+      target_doi: targetDoi,
+      items: rows.map((row) => ({
+        edge_id: row.edge_id,
+        source_id: row.source_id,
+        source_doi: row.source_doi,
+        source_text: row.source_text,
+        old_target_id: row.old_target_id,
+        target_doi: row.target_doi,
+        ref_index: parseRefIndexFromEvidenceRef(row.evidence_ref)
+      }))
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Incoming citations query failed";
+    logStructured(c, "error", "internal.incoming_citations.failed", { message, targetDoi });
+    return jsonError(c, 500, "INCOMING_CITATIONS_FAILED", message);
   }
 });
 
@@ -3162,6 +3366,75 @@ app.post("/api/internal/pending-bibs/retry", async (c) => {
   }
 });
 
+app.post("/api/internal/pending-bibs/complete", async (c) => {
+  const tokenError = requireInternalToken(c);
+  if (tokenError) {
+    const status = tokenError.error.code === "INTERNAL_TOKEN_MISSING" ? 500 : 401;
+    return jsonError(c, status, tokenError.error.code, tokenError.error.message);
+  }
+
+  let body: unknown = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    body = {};
+  }
+  const payload = isRecord(body) ? body : {};
+  const ids = toOptionalStringArray(payload.ids);
+  const targetDois = toOptionalStringArray(payload.target_dois ?? payload.dois ?? payload.targetDois);
+  const normalizedDois = targetDois
+    .map((doi) => normalizeDoiForStorage(doi))
+    .filter((doi): doi is string => Boolean(doi));
+
+  if (ids.length === 0 && normalizedDois.length === 0) {
+    return jsonError(
+      c,
+      400,
+      "MISSING_TARGETS",
+      "Provide ids[] and/or target_dois[] to mark pending_bibs completed"
+    );
+  }
+
+  const completedAt = nowUnixSeconds();
+  try {
+    let completed = 0;
+    if (ids.length > 0) {
+      const placeholders = ids.map(() => "?").join(", ");
+      const result = await c.env.DB.prepare(
+        `UPDATE pending_bibs
+        SET status = 'completed',
+            updated_at = ?
+        WHERE id IN (${placeholders})
+          AND status IN ('queued', 'retrying', 'failed')`
+      )
+        .bind(completedAt, ...ids)
+        .run();
+      completed += Number(result.meta.changes ?? 0);
+    }
+
+    if (normalizedDois.length > 0) {
+      for (const doi of normalizedDois) {
+        const result = await c.env.DB.prepare(
+          `UPDATE pending_bibs
+          SET status = 'completed',
+              updated_at = ?
+          WHERE source_ref = ?
+            AND status IN ('queued', 'retrying', 'failed')`
+        )
+          .bind(completedAt, doi)
+          .run();
+        completed += Number(result.meta.changes ?? 0);
+      }
+    }
+
+    return c.json({ ok: true, completed });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Pending bib complete failed";
+    logStructured(c, "error", "internal.pending_bibs.complete.failed", { message });
+    return jsonError(c, 500, "PENDING_BIBS_COMPLETE_FAILED", message);
+  }
+});
+
 app.post("/api/internal/feed-generate", async (c) => {
   const tokenError = requireInternalToken(c);
   if (tokenError) {
@@ -3367,6 +3640,10 @@ app.post("/api/cite/bulk-ingest", async (c) => {
   }
 
   if (parsedPayload.edges.length > 0) {
+    const defaultAlgorithmVersion =
+      parsedPayload.meta?.algorithmVersion ??
+      c.env.REVALIDATION_CRON_ALGORITHM_VERSION ??
+      "v0-skeleton";
     const edgeRows = parsedPayload.edges.map((edge) => [
       edge.id,
       edge.fromNodeId,
@@ -3374,22 +3651,29 @@ app.post("/api/cite/bulk-ingest", async (c) => {
       edge.edgeType,
       edge.weight,
       edge.evidenceRef,
-      nowSec
+      nowSec,
+      "active",
+      defaultAlgorithmVersion,
+      edge.confidenceTier
     ]);
-    for (const chunk of chunkRows(edgeRows, 7)) {
-      const placeholders = chunk.map(() => "(?, ?, ?, ?, ?, ?, ?)").join(", ");
+    for (const chunk of chunkRows(edgeRows, 10)) {
+      const placeholders = chunk.map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").join(", ");
       const binds = chunk.flat();
       statements.push(
         c.env.DB.prepare(
           `INSERT INTO cite_edges (
-            id, from_node_id, to_node_id, edge_type, weight, evidence_ref, created_at
+            id, from_node_id, to_node_id, edge_type, weight, evidence_ref, created_at,
+            status, algorithm_version, confidence_tier
           ) VALUES ${placeholders}
           ON CONFLICT(id) DO UPDATE SET
             from_node_id = excluded.from_node_id,
             to_node_id = excluded.to_node_id,
             edge_type = excluded.edge_type,
             weight = excluded.weight,
-            evidence_ref = excluded.evidence_ref`
+            evidence_ref = excluded.evidence_ref,
+            status = excluded.status,
+            algorithm_version = excluded.algorithm_version,
+            confidence_tier = excluded.confidence_tier`
         ).bind(...binds)
       );
     }
@@ -3399,7 +3683,20 @@ app.post("/api/cite/bulk-ingest", async (c) => {
     if (statements.length > 0) {
       await c.env.DB.batch(statements);
     }
+    let superseded = 0;
+    if (parsedPayload.edgeSupersedes && parsedPayload.edgeSupersedes.length > 0) {
+      await applyEdgeRevalidationUpdates(c.env.DB, parsedPayload.edgeSupersedes);
+      superseded = parsedPayload.edgeSupersedes.length;
+    }
     const aliasCount = await upsertDoiAliasesFromBulkIngest(c, parsedPayload);
+    let pendingBibsInserted = 0;
+    if (parsedPayload.meta?.pendingBibs && parsedPayload.meta.pendingBibs.length > 0) {
+      pendingBibsInserted = await insertPendingBibsFromBulkIngest(
+        c.env.DB,
+        parsedPayload.meta.pendingBibs,
+        nowSec
+      );
+    }
     return c.json({
       ok: true,
       chunk_policy: {
@@ -3411,6 +3708,8 @@ app.post("/api/cite/bulk-ingest", async (c) => {
         nodes: parsedPayload.nodes.length,
         edges: parsedPayload.edges.length,
         doi_aliases: aliasCount,
+        edge_supersedes: superseded,
+        pending_bibs: pendingBibsInserted,
         vectors: {
           sentence: parsedPayload.vectors.sentence.length,
           paper: parsedPayload.vectors.paper.length

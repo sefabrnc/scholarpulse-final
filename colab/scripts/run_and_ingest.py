@@ -25,7 +25,7 @@ def parse_args() -> argparse.Namespace:
         description="Run 8-pass pipeline for one PDF and optionally POST to bulk-ingest.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--pdf", required=True, help="Local PDF path")
+    parser.add_argument("--pdf", help="Local PDF path (optional when SP_AUTO_FETCH_PDF=1)")
     parser.add_argument("--doi", required=True, help="Paper DOI")
     parser.add_argument("--metadata-json", help="Optional metadata JSON path")
     parser.add_argument("--out", help="Write payload JSON to this path")
@@ -81,15 +81,15 @@ def main() -> None:
     args = parse_args()
     _apply_overrides(args)
 
-    if not Path(args.pdf).exists():
+    if args.pdf and not Path(args.pdf).exists():
         raise SystemExit(f"PDF not found: {args.pdf}")
 
     config = PipelineConfig()
     context = build_context(
-        pdf_path=args.pdf,
         doi=args.doi,
-        metadata_path=args.metadata_json,
         config=config,
+        pdf_path=args.pdf,
+        metadata_path=args.metadata_json,
     )
     payload = run_pipeline(context)
 
@@ -97,6 +97,13 @@ def main() -> None:
         route = context.artifacts.get("grobid_route")
         if route:
             print("grobid_route:", json.dumps(route, ensure_ascii=True))
+        pdf_meta = {
+            key: context.paper.metadata.get(key)
+            for key in ("pdf_source", "pdf_url", "pdf_path")
+            if context.paper.metadata.get(key) is not None
+        }
+        if pdf_meta:
+            print("pdf_acquire:", json.dumps(pdf_meta, ensure_ascii=True))
         if context.warnings:
             print("warnings:", json.dumps(context.warnings, ensure_ascii=True))
         if context.skipped_reason:

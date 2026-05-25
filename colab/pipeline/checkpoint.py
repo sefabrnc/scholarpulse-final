@@ -7,7 +7,9 @@ import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Iterable, List, Optional
+
+from .cross_citations import IncomingCrossCitation, cross_citation_rows
 
 
 @dataclass
@@ -58,6 +60,24 @@ class CheckpointStore:
                 CREATE TABLE IF NOT EXISTS meta (
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS cross_citations (
+                    edge_id TEXT PRIMARY KEY,
+                    target_doi TEXT NOT NULL,
+                    source_doi TEXT NOT NULL,
+                    source_id TEXT NOT NULL,
+                    source_text TEXT NOT NULL,
+                    old_target_id TEXT NOT NULL,
+                    ref_index INTEGER,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    updated_at REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_cross_citations_target_status
+                    ON cross_citations(target_doi, status);
+                CREATE TABLE IF NOT EXISTS pending_manifest (
+                    doi TEXT PRIMARY KEY,
+                    source TEXT NOT NULL DEFAULT 'expand_references',
+                    updated_at REAL NOT NULL
                 );
                 """
             )
@@ -126,3 +146,109 @@ class CheckpointStore:
             if self.is_done(doi):
                 continue
             yield item
+
+    def record_cross_citations(self, items: Iterable[IncomingCrossCitation]) -> int:
+        rows = cross_citation_rows(items)
+        if not rows:
+            return 0
+        with self._connect() as conn:
+            conn.executemany(
+                """
+                INSERT INTO cross_citations(
+                    edge_id, target_doi, source_doi, source_id, source_text,
+                    old_target_id, ref_index, status, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(edge_id) DO UPDATE SET
+                    target_doi=excluded.target_doi,
+                    source_doi=excluded.source_doi,
+                    source_id=excluded.source_id,
+                    source_text=excluded.source_text,
+                    old_target_id=excluded.old_target_id,
+                    ref_index=excluded.ref_index,
+                    status=excluded.status,
+                    updated_at=excluded.updated_at
+                """,
+                rows,
+            )
+        return len(rows)
+
+    def load_cross_citations_for_target(self, target_doi: str) -> List[IncomingCrossCitation]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT edge_id, target_doi, source_doi, source_id, source_text,
+                       old_target_id, ref_index
+                FROM cross_citations
+                WHERE target_doi = ? AND status = 'pending'
+                ORDER BY updated_at ASC
+                """,
+                (target_doi,),
+            ).fetchall()
+        found: List[IncomingCrossCitation] = []
+        for row in rows:
+            mapped = IncomingCrossCitation.from_mapping(
+                {
+                    "edge_id": row["edge_id"],
+                    "target_doi": row["target_doi"],
+                    "source_doi": row["source_doi"],
+                    "source_id": row["source_id"],
+                    "source_text": row["source_text"],
+                    "old_target_id": row["old_target_id"],
+                    "ref_index": row["ref_index"],
+                }
+            )
+            if mapped:
+                found.append(mapped)
+        return found
+
+    def mark_cross_citations_resolved(self, edge_ids: Iterable[str]) -> int:
+        ids = [edge_id for edge_id in edge_ids if edge_id]
+        if not ids:
+            return 0
+        now = time.time()
+        with self._connect() as conn:
+            conn.executemany(
+                """
+                UPDATE cross_citations
+                SET status = 'resolved', updated_at = ?
+                WHERE edge_id = ?
+                """,
+                [(now, edge_id) for edge_id in ids],
+            )
+        return len(ids)
+
+    def record_pending_manifest(self, dois: Iterable[str], *, source: str = "expand_references") -> int:
+        rows = [(str(doi).strip(), source, time.time()) for doi in dois if str(doi).strip()]
+        if not rows:
+            return 0
+        with self._connect() as conn:
+            conn.executemany(
+                """
+                INSERT INTO pending_manifest(doi, source, updated_at)
+                VALUES(?, ?, ?)
+                ON CONFLICT(doi) DO UPDATE SET
+                    source=excluded.source,
+                    updated_at=excluded.updated_at
+                """,
+                rows,
+            )
+        return len(rows)
+
+    def load_pending_manifest(self) -> List[str]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT doi
+                FROM pending_manifest
+                ORDER BY updated_at ASC
+                """
+            ).fetchall()
+        return [str(row["doi"]) for row in rows if row["doi"]]
+
+    def clear_pending_manifest(self, dois: Iterable[str]) -> int:
+        ids = [str(doi).strip() for doi in dois if str(doi).strip()]
+        if not ids:
+            return 0
+        with self._connect() as conn:
+            conn.executemany("DELETE FROM pending_manifest WHERE doi = ?", [(doi,) for doi in ids])
+        return len(ids)

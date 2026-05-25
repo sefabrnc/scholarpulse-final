@@ -62,3 +62,19 @@ def run(context: PipelineContext) -> PipelineContext:
         "resolved_ref_indexes": sorted(resolved_indexes),
     }
     return context
+
+
+def filter_cross_paper_edges(
+    edges: list,
+    source_text_by_id: dict[str, str],
+) -> tuple[list, int]:
+    """Apply marker false-positive filter to pass8 cross-paper edges only."""
+    kept = []
+    dropped = 0
+    for edge in edges:
+        text = source_text_by_id.get(edge.source_id, "")
+        if _is_enum_false_positive(text):
+            dropped += 1
+            continue
+        kept.append(edge)
+    return kept, dropped

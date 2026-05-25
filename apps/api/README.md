@@ -48,6 +48,9 @@ pnpm --filter @scholarpulse/api exec wrangler d1 migrations apply scholarpulse_d
 - `POST /api/internal/feed-generate`
 - `GET /api/internal/ingest-log`
 - `POST /api/internal/pending-bibs/retry`
+- `POST /api/internal/pending-bibs/complete`
+- `GET /api/internal/incoming-citations`
+- `GET /api/internal/ingest-queue`
 - `POST /api/cite/bulk-ingest`
 - `POST /api/paper/bulk-upsert`
 - `POST /api/internal/openalex/bulk-upsert`
@@ -205,6 +208,9 @@ Available operational routes:
 - `POST /api/internal/feed-generate` (`items[]` payload with `userId` and `nodeId` or `doi`)
 - `GET /api/internal/ingest-log?status=&cursor=&limit=`
 - `POST /api/internal/pending-bibs/retry` (`ids[]` optional, otherwise pulls due queue)
+- `POST /api/internal/pending-bibs/complete` (`ids[]` and/or `target_dois[]` — marks queue rows `completed` after Colab ingest)
+- `GET /api/internal/incoming-citations?target_doi=` (cross-paper placeholder edges pointing at a DOI)
+- `GET /api/internal/ingest-queue` (poll `pending_bibs` + `pdf_uploads` for Colab batch runner)
 - `POST /api/internal/openalex/bulk-upsert` (internal-token protected OpenAlex bulk consumer)
 
 ### `GET /api/internal/vectorize-indexes`
@@ -784,6 +790,82 @@ curl "http://127.0.0.1:8787/api/public/paper/10.48550%2FarXiv.1706.03762"
 curl "http://127.0.0.1:8787/api/public/cite/edge_123"
 curl "http://127.0.0.1:8787/api/public/timeline/node_123?limit=25"
 curl "http://127.0.0.1:8787/api/public/search?q=transformer&limit=20"
+```
+
+## Colab Pipeline Integration
+
+### `POST /api/cite/bulk-ingest` — `meta.pending_bibs`
+
+Colab pass7 may include unresolved bibliography targets in payload meta:
+
+```json
+{
+  "meta": {
+    "pending_bibs": [
+      {
+        "source_doi": "10.1000/a",
+        "target_doi": "10.1000/b",
+        "ref_index": 3,
+        "bib_text": "Vaswani et al., 2017"
+      }
+    ]
+  }
+}
+```
+
+The Worker persists each entry into `pending_bibs` with `payload_json.kind = "cite_resolve"` and `user_id = "colab"`. Colab can poll these via `GET /api/internal/ingest-queue`.
+
+### `GET /api/internal/ingest-queue`
+
+Colab batch runner (`ingest_pipeline_runner.py --poll-queue`) polls queued PDF uploads and `pending_bibs` rows (`status = queued`). Each pending bib exposes parsed `payload` (including `target_doi` for `cite_resolve` rows).
+
+Example:
+
+```bash
+curl "https://YOUR-WORKER/api/internal/ingest-queue?limit=25" \
+  -H "Authorization: Bearer $INTERNAL_API_TOKEN"
+```
+
+### `GET /api/internal/incoming-citations`
+
+Pass8 cross-paper resolve queries active edges from source sentences to **reference placeholder** nodes on a target DOI:
+
+```bash
+curl "https://YOUR-WORKER/api/internal/incoming-citations?target_doi=10.1000/b&limit=200" \
+  -H "Authorization: Bearer $INTERNAL_API_TOKEN"
+```
+
+Returns `items[]` with `edge_id`, `source_id`, `source_doi`, `source_text`, `old_target_id`, `target_doi`, `ref_index`.
+
+### `edge_supersedes` on bulk-ingest
+
+When pass8 resolves cross-paper citations, Colab sends `edge_supersedes[]` alongside new edges. Each entry updates the old placeholder edge:
+
+```json
+{
+  "edge_supersedes": [
+    {
+      "id": "old-edge-id",
+      "status": "superseded",
+      "algorithm_version": "v0-skeleton",
+      "confidence_tier": "medium",
+      "last_validated_at": 1710000000
+    }
+  ]
+}
+```
+
+Applied via `applyEdgeRevalidationUpdates()` after node/edge upsert.
+
+### `POST /api/internal/pending-bibs/complete`
+
+After successful ingest, Colab marks queue rows consumed:
+
+```bash
+curl -X POST "https://YOUR-WORKER/api/internal/pending-bibs/complete" \
+  -H "Authorization: Bearer $INTERNAL_API_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{"target_dois":["10.1000/b"],"ids":["pending_abc123"]}'
 ```
 
 ## Notes

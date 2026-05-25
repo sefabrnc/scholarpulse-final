@@ -51,6 +51,56 @@ def _edge_id(edge: CiteEdge) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
 
 
+def to_stub_node_payload(source_id: str, source_doi: str, source_text: str) -> Dict:
+    """Minimal FK-safe node for cross-paper edge sources not in the current paper."""
+    title = source_text.strip() or source_id
+    metadata_json = json.dumps(
+        {"stub": True, "cross_paper": True, "element_type": "sentence"},
+        ensure_ascii=True,
+        separators=(",", ":"),
+    )
+    return {
+        "id": source_id,
+        "source": "colab",
+        "sourceRef": f"{source_doi}#stub" if source_doi else f"{source_id}#stub",
+        "title": title[:400],
+        "doiNorm": source_doi or None,
+        "publicationYear": None,
+        "venue": None,
+        "nodeType": "sentence",
+        "metadataJson": metadata_json,
+        "authorsText": None,
+        "topicTerms": None,
+        "rankSignal": None,
+    }
+
+
+def attach_cross_paper_source_stubs(payload: Dict, stubs: Sequence[Dict[str, str]]) -> None:
+    """Ensure cross-paper edge source nodes exist in bulk payload for FK-safe ingest."""
+    if not stubs:
+        return
+    nodes = payload.setdefault("nodes", [])
+    if not isinstance(nodes, list):
+        return
+    existing_ids = {
+        str(node.get("id"))
+        for node in nodes
+        if isinstance(node, dict) and node.get("id")
+    }
+    for stub in stubs:
+        source_id = str(stub.get("source_id") or "").strip()
+        if not source_id or source_id in existing_ids:
+            continue
+        nodes.append(
+            to_stub_node_payload(
+                source_id,
+                str(stub.get("source_doi") or "").strip(),
+                str(stub.get("source_text") or "").strip(),
+            )
+        )
+        existing_ids.add(source_id)
+
+
 def to_edge_payload(edge: CiteEdge) -> Dict:
     parts = []
     if edge.ref_index is not None:
@@ -70,6 +120,7 @@ def to_edge_payload(edge: CiteEdge) -> Dict:
         "edgeType": edge.relation_type or "mentions",
         "weight": round(float(weight), 6),
         "evidenceRef": evidence_ref,
+        "confidenceTier": edge.confidence_tier,
     }
 
 

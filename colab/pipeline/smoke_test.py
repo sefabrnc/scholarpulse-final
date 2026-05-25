@@ -19,6 +19,13 @@ os.environ.setdefault("SP_USE_REAL_MODELS", "0")
 
 from colab.pipeline.clients.canonicalization import is_valid_doi, normalize_doi
 from colab.pipeline.clients.grobid import GrobidClient
+from colab.pipeline.clients.pdf_fetch import is_valid_pdf_file, safe_doi_filename
+from colab.pipeline.clients.pdf_resolver import (
+    PdfResolver,
+    arxiv_pdf_url_from_doi,
+    _pick_openalex_pdf,
+)
+from colab.pipeline.ingest_queue import dois_from_pending_bibs
 from colab.pipeline.config import PipelineConfig
 from colab.pipeline.models import compute_algorithm_version, create_models
 from colab.pipeline.models.embedding import EmbeddingModel
@@ -171,6 +178,188 @@ class PipelineSmokeTest(unittest.TestCase):
         context.extracted_text_len = len(context.artifacts["raw_text"])
         selected = pass0_5_reference_parser._resolve_route(context)
         self.assertEqual(selected, "regex")
+
+    def test_arxiv_pdf_url_from_doi(self) -> None:
+        url = arxiv_pdf_url_from_doi("10.48550/arXiv.1706.03762")
+        self.assertEqual(url, "https://arxiv.org/pdf/1706.03762.pdf")
+
+    def test_openalex_pdf_pick(self) -> None:
+        work = {
+            "best_oa_location": {"pdf_url": "https://example.org/paper.pdf"},
+            "open_access": {"oa_url": "https://example.org/html"},
+        }
+        picked = _pick_openalex_pdf(work)
+        self.assertIsNotNone(picked)
+        self.assertEqual(picked[0], "https://example.org/paper.pdf")
+        self.assertEqual(picked[1], "openalex_best_oa")
+
+    def test_pdf_resolver_arxiv_without_network(self) -> None:
+        class StubOpenAlex:
+            def get_work_by_doi(self, doi: str):
+                return None
+
+        resolver = PdfResolver(StubOpenAlex())
+        resolved = resolver.resolve_pdf_url("10.48550/arXiv.1706.03762")
+        self.assertIsNotNone(resolved)
+        self.assertEqual(resolved.source, "arxiv_doi")
+
+    def test_ingest_queue_doi_extraction(self) -> None:
+        dois = dois_from_pending_bibs(
+            [
+                {
+                    "source_ref": "upload-1",
+                    "payload": {
+                        "target_doi": "10.1038/nature12373",
+                        "source_doi": "10.48550/arXiv.1706.03762",
+                    },
+                },
+                {
+                    "source_ref": "10.1126/science.abc1234",
+                    "payload": {"kind": "library_import", "doi": "10.1126/science.abc1234"},
+                },
+            ]
+        )
+        self.assertEqual(dois[0], "10.1038/nature12373")
+        self.assertIn("10.1126/science.abc1234", dois)
+
+    def test_safe_doi_filename(self) -> None:
+        self.assertEqual(
+            safe_doi_filename("10.48550/arXiv.1706.03762"),
+            "10.48550_arxiv.1706.03762",
+        )
+
+    def test_is_valid_pdf_file(self) -> None:
+        path = Path(REPO_ROOT) / "colab" / "pipeline" / "smoke_test.py"
+        self.assertFalse(is_valid_pdf_file(path))
+
+    def test_extract_outbound_cross_citations(self) -> None:
+        from colab.pipeline.cross_citations import extract_outbound_cross_citations
+
+        payload = {
+            "nodes": [
+                {
+                    "id": "src1",
+                    "doiNorm": "10.1000/a",
+                    "nodeType": "sentence",
+                    "title": "Transformers are useful [3].",
+                },
+                {
+                    "id": "tgt1",
+                    "doiNorm": "10.1000/b",
+                    "nodeType": "reference",
+                    "title": "Attention Is All You Need",
+                },
+            ],
+            "edges": [
+                {
+                    "id": "edge1",
+                    "fromNodeId": "src1",
+                    "toNodeId": "tgt1",
+                    "evidenceRef": "ref:3",
+                }
+            ],
+        }
+        found = extract_outbound_cross_citations(payload, "10.1000/a")
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0].target_doi, "10.1000/b")
+        self.assertEqual(found[0].ref_index, 3)
+
+    def test_gather_incoming_cross_citations_checkpoint(self) -> None:
+        import shutil
+        import tempfile
+
+        from colab.pipeline.checkpoint import CheckpointStore
+        from colab.pipeline.cross_citations import IncomingCrossCitation
+        from colab.pipeline.incoming_citations import gather_incoming_cross_citations
+
+        tmp = tempfile.mkdtemp()
+        try:
+            store = CheckpointStore(tmp, run_id="smoke")
+            store.record_cross_citations(
+                [
+                    IncomingCrossCitation(
+                        edge_id="edge-old",
+                        source_id="a1",
+                        source_doi="10.1000/a",
+                        source_text="Prior work on transformers [3].",
+                        old_target_id="ref-placeholder",
+                        target_doi="10.1000/b",
+                        ref_index=3,
+                    )
+                ]
+            )
+            found = gather_incoming_cross_citations(
+                "10.1000/b",
+                PipelineConfig(),
+                checkpoint_store=store,
+            )
+            self.assertEqual(len(found), 1)
+            self.assertEqual(found[0].edge_id, "edge-old")
+            self.assertEqual(found[0].source_id, "a1")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_pass8_cross_paper_resolve_stub(self) -> None:
+        from colab.pipeline.cross_citations import IncomingCrossCitation
+        from colab.pipeline.stages import pass8_cross_paper_resolve
+        from colab.pipeline.types import PaperInput, PipelineContext, SentenceNode
+
+        from dataclasses import replace
+
+        config = replace(
+            PipelineConfig(),
+            cross_paper_ce_threshold=0.5,
+            vector_score_threshold=0.0,
+        )
+        context = PipelineContext(
+            config=config,
+            paper=PaperInput(doi="10.1000/b", pdf_path="x.pdf", metadata={}),
+        )
+        text = "Attention is all you need for sequence transduction models."
+        context.nodes = [
+            SentenceNode(
+                sentence_id="b1",
+                doi="10.1000/b",
+                page=1,
+                norm_x=0.1,
+                norm_y=0.2,
+                norm_w=0.8,
+                norm_h=0.05,
+                text=text,
+            )
+        ]
+        embed = EmbeddingModel("test-embed")
+        rerank = RerankerModel("test-rerank")
+        intent = IntentModel("test-intent")
+        context.artifacts["node_embeddings"] = {"b1": embed.embed([text])[0]}
+        incoming = [
+            IncomingCrossCitation(
+                edge_id="edge-old",
+                source_id="a1",
+                source_doi="10.1000/a",
+                source_text="Attention is all you need for modern sequence transduction [3].",
+                old_target_id="ref-placeholder",
+                target_doi="10.1000/b",
+                ref_index=3,
+            )
+        ]
+        try:
+            context = pass8_cross_paper_resolve.run(
+                context,
+                incoming,
+                embedding_model=embed,
+                reranker=rerank,
+                intent_model=intent,
+            )
+        finally:
+            embed.release()
+            rerank.release()
+            intent.release()
+
+        self.assertGreaterEqual(len(context.edges), 1)
+        self.assertEqual(context.edges[-1].source_id, "a1")
+        self.assertEqual(context.edges[-1].target_id, "b1")
+        self.assertTrue(context.artifacts.get("superseded_edges"))
 
     def test_grobid_hybrid_routing_clean(self) -> None:
         from colab.pipeline.helpers.pdf_quality import assess_pdf_for_grobid

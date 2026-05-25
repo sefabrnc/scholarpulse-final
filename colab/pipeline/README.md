@@ -8,18 +8,20 @@ This package provides a runnable 8-pass Colab ingestion backbone wired to
 - pass0 text extraction with union bbox + math/code skip
 - pass0.5 GROBID TEI reference parse with **hybrid routing** (`SP_GROBID_MODE=auto`: clean PDF → GROBID, dirty → regex)
 - pass1 real embedding inference (Qwen3-Embedding-0.6B or BGE-M3) with stub fallback
+- **DOI → PDF auto-fetch** (OpenAlex OA + Unpaywall + arXiv) before pass0 when `pdf` is omitted
 - pass2 OpenAlex resolve + strict DOI canonicalization + alias collection
 - pass3 FAISS/local index candidate search with pending_bibs queue
 - pass4 cross-encoder rerank (gte-reranker-modernbert or Qwen3-Reranker) + confidence tier
 - pass5 CiteFusion SciCite WS intent (6-label contract) with SciCite/rule stub fallback
 - pass6 marker post-validation (enum false-positive filter)
 - pass7 serializer + meta.doi_aliases + model_backends metadata
+- pass8 incoming cross-paper resolve (A cite sentence -> B real sentence)
 - `colab/scripts/run_and_ingest.py` example ingest script
 
 ## Folder Layout
 
 - `config.py`: environment-driven thresholds, model names, service URLs.
-- `main.py`: CLI runner that executes pass0..pass7 in sequence.
+- `main.py`: CLI runner that executes pass0..pass8 in sequence.
 - `smoke_test.py`: stub-path smoke tests (no GPU/models required).
 - `post_bulk_ingest.py`: helper script to POST generated payload to API.
 - `stages/`: pass modules (pass0 through pass7).
@@ -79,6 +81,13 @@ set SP_HIGH_CONFIDENCE_THRESHOLD=0.95
 set SP_VECTOR_SCORE_THRESHOLD=0.50
 set SP_BIB_MATCH_THRESHOLD=0.92
 set SP_OPENALEX_BASE_URL=https://api.openalex.org
+set SP_OPENALEX_MAILTO=you@example.com
+set SP_UNPAYWALL_EMAIL=you@example.com
+set SP_AUTO_FETCH_PDF=1
+set SP_PDF_CACHE_DIR=/tmp/scholarpulse/pdfs
+set SP_PDF_FETCH_TIMEOUT_S=90
+set SP_INTERNAL_API_BASE_URL=https://scholarpulse-api.YOUR_SUBDOMAIN.workers.dev
+set SP_CROSS_PAPER_RESOLVE=1
 set SP_GROBID_BASE_URL=http://localhost:8070
 set SP_GROBID_MODE=auto
 set SP_CHECKPOINT_DIR=/content/drive/MyDrive/scholarpulse/checkpoints/run-001
@@ -87,6 +96,11 @@ set SP_RESUME_CHECKPOINT=%SP_CHECKPOINT_DIR%/stage.sqlite
 set SP_INGEST_API_URL=http://localhost:8787/api/cite/bulk-ingest
 set SP_INGEST_TOKEN=your_token
 ```
+
+Cross-paper re-matching (pass8) reads pending citations from the local
+checkpoint **and** `GET /api/internal/incoming-citations` when both
+`SP_INTERNAL_API_BASE_URL` and `SP_INGEST_TOKEN` are set. Set
+`SP_CROSS_PAPER_RESOLVE=0` to skip pass8.
 
 Model fallback chain (automatic when primary fails):
 

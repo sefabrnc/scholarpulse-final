@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Dict
 
-from ..serializers.bulk_ingest import build_bulk_payload
+from ..serializers.bulk_ingest import attach_cross_paper_source_stubs, build_bulk_payload
 from ..types import PipelineContext
 
 
@@ -24,6 +24,12 @@ def run(context: PipelineContext) -> Dict:
         "vectors": context.artifacts.get("vectors", {"sentence": [], "paper": []}),
     }
     payload = build_bulk_payload([paper_payload], max_papers_per_chunk=context.config.max_papers_per_chunk)[0]
+    stubs = context.artifacts.get("cross_paper_source_stubs", [])
+    if isinstance(stubs, list) and stubs:
+        attach_cross_paper_source_stubs(payload, stubs)
+    superseded = context.artifacts.get("superseded_edges", [])
+    if isinstance(superseded, list) and superseded:
+        payload["edge_supersedes"] = superseded
     payload["meta"] = {
         "paperCount": 1,
         "doi": context.paper.doi,
@@ -35,6 +41,7 @@ def run(context: PipelineContext) -> Dict:
             context.config.default_algorithm_version,
         ),
         "model_backends": context.artifacts.get("model_backends", {}),
+        "cross_paper_stats": context.artifacts.get("cross_paper_stats", {}),
     }
     return payload
 

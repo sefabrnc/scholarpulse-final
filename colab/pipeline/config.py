@@ -28,9 +28,27 @@ class PipelineConfig:
     candidate_top_k: int = _env_int("SP_CANDIDATE_TOP_K", 5)
     vector_score_threshold: float = _env_float("SP_VECTOR_SCORE_THRESHOLD", 0.50)
     ce_threshold: float = _env_float("SP_CE_THRESHOLD", 0.85)
+    cross_paper_ce_threshold: float = _env_float("SP_CROSS_PAPER_CE_THRESHOLD", 0.65)
     high_confidence_threshold: float = _env_float("SP_HIGH_CONFIDENCE_THRESHOLD", 0.95)
     bib_match_threshold: float = _env_float("SP_BIB_MATCH_THRESHOLD", 0.92)
     openalex_base_url: str = _env_str("SP_OPENALEX_BASE_URL", "https://api.openalex.org")
+    openalex_mailto: Optional[str] = os.getenv("SP_OPENALEX_MAILTO")
+    unpaywall_email: Optional[str] = os.getenv("SP_UNPAYWALL_EMAIL")
+    pdf_cache_dir: str = _env_str("SP_PDF_CACHE_DIR", "/tmp/scholarpulse/pdfs")
+    pdf_fetch_timeout_s: int = _env_int("SP_PDF_FETCH_TIMEOUT_S", 90)
+    auto_fetch_pdf: bool = os.getenv("SP_AUTO_FETCH_PDF", "1").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    cross_paper_resolve: bool = os.getenv("SP_CROSS_PAPER_RESOLVE", "1").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    internal_api_base_url: str = _env_str("SP_INTERNAL_API_BASE_URL", "")
     grobid_base_url: str = _env_str("SP_GROBID_BASE_URL", "http://localhost:8070")
     # auto: clean PDF -> GROBID, dirty -> regex; grobid: always GROBID (+ fallback); regex: always regex
     grobid_mode: str = _env_str("SP_GROBID_MODE", "auto").strip().lower()
