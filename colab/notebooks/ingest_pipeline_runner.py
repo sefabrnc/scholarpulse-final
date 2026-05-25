@@ -20,6 +20,7 @@ if str(ROOT) not in sys.path:
 from colab.pipeline.checkpoint import CheckpointStore
 from colab.pipeline.clients.worker_api import complete_pending_bibs
 from colab.pipeline.config import PipelineConfig
+from colab.pipeline.version import print_version_banner, verify_critical_files
 from colab.pipeline.cross_citations import extract_outbound_cross_citations
 from colab.pipeline.ingest_queue import fetch_ingest_queue, manifest_from_queue
 from colab.pipeline.main import build_context, run_pipeline
@@ -362,6 +363,8 @@ def run_batch(args: argparse.Namespace) -> int:
 
 
 def main() -> None:
+    print_version_banner()
+    verify_critical_files()
     args = parse_args()
     raise SystemExit(run_batch(args))
 

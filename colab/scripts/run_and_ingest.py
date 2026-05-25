@@ -18,6 +18,7 @@ if str(REPO_ROOT) not in sys.path:
 from colab.pipeline.config import PipelineConfig
 from colab.pipeline.main import build_context, run_pipeline
 from colab.pipeline.post_bulk_ingest import post_payload
+from colab.pipeline.version import print_version_banner, verify_critical_files
 
 
 def parse_args() -> argparse.Namespace:
@@ -83,6 +84,8 @@ def _print_summary(payload: Dict[str, Any], verbose: bool) -> None:
 
 
 def main() -> None:
+    print_version_banner()
+    verify_critical_files()
     args = parse_args()
     _apply_overrides(args)
 
