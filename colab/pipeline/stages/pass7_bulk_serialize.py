@@ -44,13 +44,14 @@ def run(context: PipelineContext) -> Dict:
         "pass3_diagnostics": context.artifacts.get("pass3_diagnostics", {}),
         "rerank_stats": context.artifacts.get("rerank_stats", {}),
         "validated_markers": context.artifacts.get("validated_markers", {}),
+        "coord_validation": context.artifacts.get("coord_validation", {}),
+        "coord_block_ingest": bool(context.artifacts.get("coord_block_ingest")),
         "algorithm_version": context.artifacts.get("model_backends", {}).get(
             "algorithm_version",
             context.config.default_algorithm_version,
         ),
         "model_backends": context.artifacts.get("model_backends", {}),
         "cross_paper_stats": context.artifacts.get("cross_paper_stats", {}),
-        "rerank_stats": context.artifacts.get("rerank_stats", {}),
     }
     return payload
 

@@ -102,6 +102,10 @@ def run_pipeline(
 
     context = pass6_marker_validation.run(context)
 
+    from ..validators.coord_validate import run as coord_validate_run
+
+    context = coord_validate_run(context)
+
     if context.config.cross_paper_resolve:
         try:
             incoming = gather_incoming_cross_citations(

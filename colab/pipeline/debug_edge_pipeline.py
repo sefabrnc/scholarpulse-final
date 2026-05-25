@@ -34,7 +34,7 @@ from colab.pipeline.stages import (
     pass5_intent,
     pass6_marker_validation,
 )
-from colab.pipeline.stages.pass3_candidate_search import MARKER_REGEX, _refs_are_zero_based
+from colab.pipeline.stages.pass3_candidate_search import MARKER_REGEX, extract_marker_indices
 
 MARKER_IN_TEXT = re.compile(r"\[(\d+)\]")
 
@@ -63,15 +63,17 @@ def _embedding_misses(nodes, embeddings: dict) -> dict:
     return {"embedding_lookup_misses": misses, "embedding_keys": len(embeddings)}
 
 
-def _ref_index_stats(references: list) -> dict:
+def _ref_index_stats(references: list, artifacts: dict | None = None) -> dict:
     indexes = [int(r["ref_index"]) for r in references if isinstance(r.get("ref_index"), int)]
     resolved = sum(1 for r in references if r.get("resolved_doi"))
+    artifacts = artifacts or {}
     return {
         "reference_count": len(references),
         "resolved_doi_count": resolved,
         "ref_index_min": min(indexes) if indexes else None,
         "ref_index_max": max(indexes) if indexes else None,
-        "zero_based_refs": _refs_are_zero_based(references),
+        "ref_index_one_based": artifacts.get("ref_index_one_based", True),
+        "ref_index_was_zero_based": artifacts.get("ref_index_was_zero_based", False),
         "parse_backends": sorted({r.get("parse_backend", "?") for r in references}),
     }
 
@@ -93,7 +95,7 @@ def run_debug(doi: str, pdf_path: str | None, use_real: bool) -> dict:
     }
 
     context = pass0_5_reference_parser.run(context, grobid=grobid)
-    ref_stats = _ref_index_stats(context.references)
+    pre_pass2_ref_stats = _ref_index_stats(context.references)
 
     embed = EmbeddingModel(model_name=config.embed_model, allow_real=use_real)
     rerank = RerankerModel(model_name=config.rerank_model, allow_real=use_real)
@@ -103,6 +105,7 @@ def run_debug(doi: str, pdf_path: str | None, use_real: bool) -> dict:
         miss_stats = _embedding_misses(context.nodes, context.artifacts.get("node_embeddings", {}))
 
         context = pass2_bib_resolve.run(context, resolver=resolver)
+        ref_stats = _ref_index_stats(context.references, context.artifacts)
         post2_miss = _embedding_misses(context.nodes, context.artifacts.get("node_embeddings", {}))
 
         context = pass3_candidate_search.run(context, embedding_model=embed)

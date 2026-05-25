@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence
 
 from ..index.faiss_local import DoiVectorIndexRegistry
 from ..models.embedding import EmbeddingModel, _stub_embed
@@ -12,26 +12,80 @@ from ..types import PipelineContext, SentenceNode
 
 
 MARKER_REGEX = re.compile(r"\[(\d+)\]")
+SUPERSCRIPT_MAP = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹", "0123456789")
+SUPERSCRIPT_MARKER_REGEX = re.compile(r"[⁰¹²³⁴⁵⁶⁷⁸⁹]+")
+AUTHOR_YEAR_MARKER_REGEX = re.compile(
+    r"\(\s*([A-Z][A-Za-z\-'\s]+?(?:\s+et\s+al\.?)?)\s*,\s*((?:19|20)\d{2}[a-z]?)\s*\)",
+    flags=re.IGNORECASE,
+)
 
 
-def _refs_are_zero_based(references: List[Dict[str, object]]) -> bool:
-    for reference in references:
-        ref_index = reference.get("ref_index")
-        if isinstance(ref_index, int) and ref_index == 0:
-            return True
-    return False
+def _marker_matches_ref(marker_index: int, ref_index: int) -> bool:
+    return marker_index == ref_index
 
 
-def _marker_matches_ref(marker_index: int, ref_index: int, *, zero_based: bool) -> bool:
-    expected = ref_index + 1 if zero_based else ref_index
-    return marker_index == expected
+def _extract_bracket_markers(sentence: str) -> List[int]:
+    return [int(match.group(1)) for match in MARKER_REGEX.finditer(sentence)]
 
 
-def _extract_ref_index(sentence: str) -> Optional[int]:
-    match = MARKER_REGEX.search(sentence)
-    if not match:
-        return None
-    return int(match.group(1))
+def _extract_superscript_markers(sentence: str) -> List[int]:
+    markers: List[int] = []
+    for match in SUPERSCRIPT_MARKER_REGEX.finditer(sentence):
+        digits = match.group(0).translate(SUPERSCRIPT_MAP)
+        if digits.isdigit():
+            markers.append(int(digits))
+    return markers
+
+
+def _author_surname(author: str) -> str:
+    token = author.strip().split()[-1].lower()
+    return re.sub(r"[^a-z]", "", token)
+
+
+def _extract_author_year_markers(sentence: str, references: Sequence[Dict[str, object]]) -> List[int]:
+    markers: List[int] = []
+    for match in AUTHOR_YEAR_MARKER_REGEX.finditer(sentence):
+        author_hint = match.group(1).strip().lower()
+        year_hint = re.sub(r"[^0-9]", "", match.group(2))
+        if not year_hint:
+            continue
+        for reference in references:
+            ref_index = reference.get("ref_index")
+            if not isinstance(ref_index, int):
+                continue
+            ref_year = reference.get("year")
+            if ref_year is None or str(ref_year) != year_hint:
+                continue
+            authors = reference.get("authors") or []
+            if not isinstance(authors, list):
+                continue
+            for author in authors:
+                surname = _author_surname(str(author))
+                if surname and surname in author_hint:
+                    markers.append(ref_index)
+                    break
+    return markers
+
+
+def extract_marker_indices(sentence: str, references: Sequence[Dict[str, object]] | None = None) -> List[int]:
+    markers = _extract_bracket_markers(sentence)
+    markers.extend(_extract_superscript_markers(sentence))
+    if references:
+        markers.extend(_extract_author_year_markers(sentence, references))
+    # Preserve order while deduplicating.
+    seen: set[int] = set()
+    ordered: List[int] = []
+    for marker in markers:
+        if marker in seen:
+            continue
+        seen.add(marker)
+        ordered.append(marker)
+    return ordered
+
+
+def _extract_ref_index(sentence: str, references: Sequence[Dict[str, object]] | None = None) -> Optional[int]:
+    markers = extract_marker_indices(sentence, references)
+    return markers[0] if markers else None
 
 
 def _synthetic_target_node(context: PipelineContext, resolved_doi: str, reference: Dict[str, object]) -> SentenceNode:
@@ -96,10 +150,9 @@ def run(context: PipelineContext, embedding_model: EmbeddingModel | None = None)
     top_k = max(1, context.config.candidate_top_k)
     threshold = float(context.config.vector_score_threshold)
     pending_bibs: List[Dict[str, object]] = []
-    zero_based_refs = _refs_are_zero_based(references)
 
     cite_marker_sentences = sum(
-        1 for node in source_nodes if _extract_ref_index(node.text) is not None
+        1 for node in source_nodes if extract_marker_indices(node.text, references)
     )
     marker_mismatch = 0
     embedding_misses = 0
@@ -114,11 +167,11 @@ def run(context: PipelineContext, embedding_model: EmbeddingModel | None = None)
         ref_index = reference.get("ref_index")
 
         for source_node in source_nodes:
-            marker_index = _extract_ref_index(source_node.text)
-            if marker_index is None:
+            marker_indices = extract_marker_indices(source_node.text, references)
+            if not marker_indices:
                 continue
-            if isinstance(ref_index, int) and not _marker_matches_ref(
-                marker_index, ref_index, zero_based=zero_based_refs
+            if isinstance(ref_index, int) and not any(
+                _marker_matches_ref(marker_index, ref_index) for marker_index in marker_indices
             ):
                 marker_mismatch += 1
                 continue
@@ -153,6 +206,11 @@ def run(context: PipelineContext, embedding_model: EmbeddingModel | None = None)
                 hits = [(synthetic.sentence_id, 0.5)]
                 synthetic_targets += 1
 
+            matched_marker = (
+                ref_index
+                if isinstance(ref_index, int)
+                else marker_indices[0]
+            )
             for target_id, score in hits:
                 target_node = node_by_id.get(target_id)
                 if not target_node:
@@ -164,7 +222,7 @@ def run(context: PipelineContext, embedding_model: EmbeddingModel | None = None)
                         "source_text": source_node.text,
                         "target_text": target_node.text or (target_node.element_label or ""),
                         "vector_score": float(score),
-                        "ref_index": int(ref_index) if isinstance(ref_index, int) else marker_index,
+                        "ref_index": int(matched_marker) if isinstance(matched_marker, int) else marker_indices[0],
                     }
                 )
 
@@ -174,7 +232,8 @@ def run(context: PipelineContext, embedding_model: EmbeddingModel | None = None)
         "source_sentence_nodes": len(source_nodes),
         "cite_marker_sentences": cite_marker_sentences,
         "resolved_references": sum(1 for ref in references if ref.get("resolved_doi")),
-        "zero_based_refs": zero_based_refs,
+        "ref_index_one_based": context.artifacts.get("ref_index_one_based", True),
+        "ref_index_was_zero_based": context.artifacts.get("ref_index_was_zero_based", False),
         "marker_mismatch_skips": marker_mismatch,
         "embedding_lookup_misses": embedding_misses,
         "empty_vector_index_hits": empty_vector_hits,

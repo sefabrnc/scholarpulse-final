@@ -31,7 +31,31 @@ def _normalize_reference(reference: Dict) -> Dict:
         "authors": reference.get("authors", []) or [],
         "year": reference.get("year"),
         "doi": str(reference.get("doi", "")),
+        "parse_backend": reference.get("parse_backend"),
     }
+
+
+def _references_are_zero_based(references: list) -> bool:
+    if any(
+        isinstance(ref.get("ref_index"), int) and int(ref["ref_index"]) == 0
+        for ref in references
+    ):
+        return True
+    return any(ref.get("parse_backend") == "grobid" for ref in references)
+
+
+def normalize_ref_indexes(context: PipelineContext) -> None:
+    """Unify GROBID 0-based and regex 1-based ref_index to 1-based markers."""
+    references = context.references
+    was_zero_based = _references_are_zero_based(references)
+    if was_zero_based:
+        for ref in references:
+            ref_index = ref.get("ref_index")
+            if isinstance(ref_index, int):
+                ref["ref_index"] = ref_index + 1
+
+    context.artifacts["ref_index_one_based"] = True
+    context.artifacts["ref_index_was_zero_based"] = was_zero_based
 
 
 def _remap_embedding_artifacts(
@@ -123,6 +147,8 @@ def run(context: PipelineContext, resolver: CanonicalDoiResolver) -> PipelineCon
 
     # Keep context.references aligned for marker/intent passes.
     context.references = resolved_refs
+    normalize_ref_indexes(context)
+    resolved_refs = context.references
     context.artifacts["doi_aliases"] = all_aliases
     context.artifacts["resolved_references"] = resolved_refs
     return context

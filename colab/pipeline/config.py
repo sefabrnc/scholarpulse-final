@@ -77,4 +77,12 @@ class PipelineConfig:
         or os.getenv("SP_SKIP_OCR", "1").strip().lower() in {"0", "false", "no", "off"}
     )
     default_algorithm_version: str = _env_str("SP_ALGORITHM_VERSION", "v0-skeleton")
+    batch_limit: int = _env_int("SP_BATCH_LIMIT", 0)
+    expand_reference_depth: int = _env_int("SP_EXPAND_REFERENCE_DEPTH", 1)
+    max_expanded_papers: int = _env_int("SP_MAX_EXPANDED_PAPERS", 500)
+    coord_validate: bool = _env_bool("SP_COORD_VALIDATE", True)
+    coord_spot_check: bool = _env_bool("SP_COORD_SPOT_CHECK", False)
+    min_coord_overlap: float = _env_float("SP_MIN_COORD_OVERLAP", 0.30)
+    coord_block_ingest: bool = _env_bool("SP_COORD_BLOCK_INGEST", True)
+    debug_edge_pipeline: bool = _env_bool("SP_DEBUG_EDGE_PIPELINE", False)
 

@@ -190,18 +190,18 @@ def run_batch(args: argparse.Namespace) -> int:
     store = CheckpointStore(checkpoint_dir, run_id=args.run_id)
     cursor = store.load_cursor()
     checkpoint_every = args.checkpoint_every or config.checkpoint_every
+    batch_limit = args.limit or config.batch_limit or 0
 
     manifest = _resolve_manifest(args, config)
     pending = list(store.iter_pending(manifest))
     queued_dois: Set[str] = {str(item.get("doi", "")).strip() for item in pending if item.get("doi")}
     for manifest_doi in store.load_pending_manifest():
         if manifest_doi and manifest_doi not in queued_dois and not store.is_done(manifest_doi):
-            pending.append({"doi": manifest_doi, "source": "checkpoint_manifest"})
+            pending.append({"doi": manifest_doi, "source": "checkpoint_manifest", "expand_depth": 0})
             queued_dois.add(manifest_doi)
-    work_queue: Deque[Dict[str, Any]] = deque(pending)
-
-    if args.limit > 0:
-        work_queue = deque(list(work_queue)[: args.limit])
+    work_queue: Deque[Dict[str, Any]] = deque(
+        {**item, "expand_depth": int(item.get("expand_depth", 0))} for item in pending
+    )
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -212,11 +212,20 @@ def run_batch(args: argparse.Namespace) -> int:
     last_heartbeat = 0.0
 
     print(f"checkpoint_dir={checkpoint_dir}")
-    print(f"resume_processed={cursor.processed} pending={len(work_queue)} auto_fetch={config.auto_fetch_pdf}")
+    print(
+        f"resume_processed={cursor.processed} pending={len(work_queue)} "
+        f"auto_fetch={config.auto_fetch_pdf} batch_limit={batch_limit or 'all'}"
+    )
 
     failures = 0
     index = 0
+    processed_count = 0
+    expanded_count = 0
     while work_queue:
+        if batch_limit > 0 and processed_count >= batch_limit:
+            print(f"batch_limit_reached processed={processed_count} limit={batch_limit}")
+            break
+
         item = work_queue.popleft()
         pdf_path = str(item.get("pdf", "")).strip() or None
         doi = str(item.get("doi", "")).strip()
@@ -261,7 +270,11 @@ def run_batch(args: argparse.Namespace) -> int:
             if cross_stats:
                 print(f"cross_paper_stats: {json.dumps(cross_stats, ensure_ascii=True)}")
 
-            if args.ingest and not args.dry_run:
+            coord_block = bool((payload.get("meta") or {}).get("coord_block_ingest"))
+            if coord_block:
+                print(f"coord_validation_blocked_ingest doi={doi}")
+
+            if args.ingest and not args.dry_run and not coord_block:
                 if not token:
                     raise RuntimeError("SP_INGEST_TOKEN or --token is required for --ingest")
                 response = post_payload(api_url, token, payload, timeout=120)
@@ -278,19 +291,47 @@ def run_batch(args: argparse.Namespace) -> int:
             cursor.processed += 1
             cursor.last_doi = doi
             cursor.last_status = "ok"
+            processed_count += 1
+
+            if config.debug_edge_pipeline:
+                try:
+                    from colab.pipeline.debug_edge_pipeline import run_debug
+
+                    debug_report = run_debug(doi=doi, pdf_path=pdf_path, use_real=config.use_real_models)
+                    edge_count = debug_report.get("final_edges", 0)
+                    print(f"debug_edge_pipeline doi={doi} final_edges={edge_count}")
+                except Exception as exc:  # pragma: no cover - diagnostic only
+                    print(f"debug_edge_pipeline_failed doi={doi} error={exc}")
 
             if args.expand_references:
-                expanded: List[str] = []
-                for ref_item in _pending_reference_items(payload):
-                    ref_doi = ref_item["doi"]
-                    if ref_doi in queued_dois or store.is_done(ref_doi):
-                        continue
-                    queued_dois.add(ref_doi)
-                    work_queue.append(ref_item)
-                    expanded.append(ref_doi)
-                    print(f"queued_reference doi={ref_doi}")
-                if expanded:
-                    store.record_pending_manifest(expanded)
+                expand_depth = int(item.get("expand_depth", 0))
+                if expand_depth < config.expand_reference_depth:
+                    expanded: List[str] = []
+                    for ref_item in _pending_reference_items(payload):
+                        if expanded_count >= config.max_expanded_papers:
+                            print(
+                                f"max_expanded_papers_reached count={expanded_count} "
+                                f"limit={config.max_expanded_papers}"
+                            )
+                            break
+                        if batch_limit > 0 and processed_count + len(work_queue) >= batch_limit:
+                            break
+                        ref_doi = ref_item["doi"]
+                        if ref_doi in queued_dois or store.is_done(ref_doi):
+                            continue
+                        queued_dois.add(ref_doi)
+                        work_queue.append(
+                            {
+                                **ref_item,
+                                "expand_depth": expand_depth + 1,
+                                "source": "expand_references",
+                            }
+                        )
+                        expanded_count += 1
+                        expanded.append(ref_doi)
+                        print(f"queued_reference doi={ref_doi} depth={expand_depth + 1}")
+                    if expanded:
+                        store.record_pending_manifest(expanded)
         except Exception as exc:
             failures += 1
             store.record(doi, "failed", error=str(exc))

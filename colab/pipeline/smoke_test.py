@@ -360,6 +360,7 @@ class PipelineSmokeTest(unittest.TestCase):
         from dataclasses import replace
 
         from colab.pipeline.stages import pass3_candidate_search, pass4_rerank, pass6_marker_validation
+        from colab.pipeline.stages.pass2_bib_resolve import normalize_ref_indexes
         from colab.pipeline.types import PaperInput, PipelineContext, SentenceNode
 
         config = replace(
@@ -391,8 +392,10 @@ class PipelineSmokeTest(unittest.TestCase):
                 "raw_text": "Vaswani et al., Attention Is All You Need, 2017.",
                 "title": "Attention Is All You Need",
                 "resolved_doi": "10.48550/arXiv.1706.03762",
+                "parse_backend": "grobid",
             }
         ]
+        normalize_ref_indexes(context)
         context.artifacts["resolved_references"] = list(context.references)
 
         embed = EmbeddingModel("test-embed")
@@ -407,7 +410,7 @@ class PipelineSmokeTest(unittest.TestCase):
 
             context = pass6_marker_validation.run(context)
             self.assertGreater(len(context.edges), 0, "pass6 should keep grobid-style cite edges")
-            self.assertEqual(context.edges[0].ref_index, 0)
+            self.assertEqual(context.edges[0].ref_index, 1)
         finally:
             embed.release()
             rerank.release()
@@ -686,6 +689,143 @@ class PipelineSmokeTest(unittest.TestCase):
             self.assertTrue(pdf_has_extractable_text(good_pdf, min_chars=100))
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_config_new_env_defaults(self) -> None:
+        config = PipelineConfig()
+        self.assertTrue(config.coord_validate)
+        self.assertFalse(config.coord_spot_check)
+        self.assertAlmostEqual(config.min_coord_overlap, 0.30)
+        self.assertTrue(config.coord_block_ingest)
+        self.assertEqual(config.expand_reference_depth, 1)
+        self.assertEqual(config.max_expanded_papers, 500)
+        self.assertFalse(config.debug_edge_pipeline)
+
+    def test_pass2_normalizes_grobid_ref_index(self) -> None:
+        from colab.pipeline.stages.pass2_bib_resolve import normalize_ref_indexes
+        from colab.pipeline.types import PaperInput, PipelineContext
+
+        context = PipelineContext(
+            config=PipelineConfig(),
+            paper=PaperInput(doi="10.1000/paper", pdf_path="x.pdf", metadata={}),
+        )
+        context.references = [
+            {"ref_index": 0, "parse_backend": "grobid", "raw_text": "A"},
+            {"ref_index": 1, "parse_backend": "grobid", "raw_text": "B"},
+        ]
+        normalize_ref_indexes(context)
+        self.assertEqual(context.references[0]["ref_index"], 1)
+        self.assertEqual(context.references[1]["ref_index"], 2)
+        self.assertTrue(context.artifacts["ref_index_was_zero_based"])
+
+    def test_coord_validation_bounds(self) -> None:
+        from dataclasses import replace
+
+        from colab.pipeline.types import PaperInput, PipelineContext, SentenceNode
+        from colab.pipeline.validators.coord_validate import run as coord_validate_run
+
+        config = replace(PipelineConfig(), coord_validate=True, coord_block_ingest=True)
+        context = PipelineContext(
+            config=config,
+            paper=PaperInput(doi="10.1000/paper", pdf_path="x.pdf", metadata={}),
+        )
+        context.artifacts["page_count"] = 2
+        context.nodes = [
+            SentenceNode(
+                sentence_id="ok1",
+                doi="10.1000/paper",
+                page=1,
+                norm_x=0.1,
+                norm_y=0.2,
+                norm_w=0.8,
+                norm_h=0.05,
+                text="Valid sentence.",
+            ),
+            SentenceNode(
+                sentence_id="bad1",
+                doi="10.1000/paper",
+                page=9,
+                norm_x=0.1,
+                norm_y=0.2,
+                norm_w=0.8,
+                norm_h=0.05,
+                text="Invalid page.",
+            ),
+        ]
+        context = coord_validate_run(context)
+        stats = context.artifacts.get("coord_validation", {})
+        self.assertEqual(stats.get("failed_nodes"), 1)
+        self.assertTrue(context.artifacts.get("coord_block_ingest"))
+
+    def test_pass3_superscript_markers(self) -> None:
+        from colab.pipeline.stages.pass3_candidate_search import extract_marker_indices
+
+        markers = extract_marker_indices("Transformers are useful¹ for NLP.")
+        self.assertEqual(markers, [1])
+
+    def test_pass3_author_year_markers(self) -> None:
+        from colab.pipeline.stages.pass3_candidate_search import extract_marker_indices
+
+        references = [
+            {
+                "ref_index": 2,
+                "authors": ["Vaswani et al."],
+                "year": 2017,
+            }
+        ]
+        markers = extract_marker_indices(
+            "We build on prior work (Vaswani et al., 2017).",
+            references,
+        )
+        self.assertEqual(markers, [2])
+
+    def test_batch_limit_counts_expanded_papers(self) -> None:
+        pending = [
+            {"target_doi": "10.1000/a"},
+            {"target_doi": "10.1000/b"},
+            {"target_doi": "10.1000/c"},
+        ]
+        budget = 2
+        processed = 0
+        queue = [{"doi": "10.1000/seed", "expand_depth": 0}]
+        expanded = 0
+        while queue and processed < budget:
+            item = queue.pop(0)
+            processed += 1
+            if item.get("expand_depth", 0) < 1:
+                for ref in pending:
+                    if expanded >= 500 or processed + len(queue) >= budget:
+                        break
+                    queue.append({"doi": ref["target_doi"], "expand_depth": 1})
+                    expanded += 1
+        self.assertEqual(processed, 2)
+        self.assertEqual(len(queue), 0)
+
+    def test_pass7_meta_no_duplicate_rerank_stats(self) -> None:
+        from colab.pipeline.stages import pass7_bulk_serialize
+        from colab.pipeline.types import PaperInput, PipelineContext, SentenceNode
+
+        context = PipelineContext(
+            config=PipelineConfig(),
+            paper=PaperInput(doi="10.1000/paper", pdf_path="x.pdf", metadata={}),
+        )
+        context.nodes = [
+            SentenceNode(
+                sentence_id="n1",
+                doi="10.1000/paper",
+                page=1,
+                norm_x=0.1,
+                norm_y=0.2,
+                norm_w=0.8,
+                norm_h=0.05,
+                text="Sample.",
+            )
+        ]
+        context.artifacts["rerank_stats"] = {"edge_count": 1}
+        context.artifacts["coord_validation"] = {"failed_nodes": 0}
+        payload = pass7_bulk_serialize.run(context)
+        meta = payload.get("meta", {})
+        self.assertEqual(list(meta.keys()).count("rerank_stats"), 1)
+        self.assertIn("coord_validation", meta)
 
     def test_pdf_cache_rejects_empty_text(self) -> None:
         import shutil
