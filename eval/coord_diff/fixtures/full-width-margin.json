@@ -1,0 +1,20 @@
+{
+  "case_id": "full-width-margin",
+  "page": {
+    "width": 612,
+    "height": 792
+  },
+  "pymupdf_bbox": {
+    "x0": 36,
+    "y0": 600,
+    "x1": 576,
+    "y1": 630
+  },
+  "frontend_norm_rect": {
+    "x": 0.0588,
+    "y": 0.7576,
+    "width": 0.8824,
+    "height": 0.0379
+  },
+  "apply_frontend_clamp": true
+}

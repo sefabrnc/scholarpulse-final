@@ -1,0 +1,20 @@
+{
+  "case_id": "edge-clamp-negative-origin",
+  "page": {
+    "width": 612,
+    "height": 792
+  },
+  "pymupdf_bbox": {
+    "x0": -4,
+    "y0": 88,
+    "x1": 300,
+    "y1": 112
+  },
+  "frontend_norm_rect": {
+    "x": 0.0,
+    "y": 0.1111,
+    "width": 0.4902,
+    "height": 0.0303
+  },
+  "apply_frontend_clamp": true
+}

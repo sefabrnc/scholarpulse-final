@@ -1,0 +1,20 @@
+{
+  "case_id": "sample-transformer-page3",
+  "page": {
+    "width": 1000,
+    "height": 2000
+  },
+  "pymupdf_bbox": {
+    "x0": 120,
+    "y0": 340,
+    "x1": 620,
+    "y1": 520
+  },
+  "frontend_norm_rect": {
+    "x": 0.12,
+    "y": 0.17,
+    "width": 0.5,
+    "height": 0.09
+  },
+  "apply_frontend_clamp": true
+}

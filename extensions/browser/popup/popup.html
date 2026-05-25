@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ScholarPulse</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="sp-popup__header">
+      <h1>ScholarPulse</h1>
+      <p class="sp-popup__subtitle">Add papers and preview cite badges.</p>
+    </header>
+
+    <section class="sp-popup__section">
+      <label for="sp-doi">Detected DOI</label>
+      <input id="sp-doi" type="text" placeholder="Open a DOI, Scholar, or PubMed page" readonly />
+    </section>
+
+    <section id="sp-badge-panel" class="sp-popup__section sp-popup__badge hidden">
+      <h2>Citation badge</h2>
+      <dl id="sp-badge-stats"></dl>
+    </section>
+
+    <section class="sp-popup__actions">
+      <button id="sp-add-btn" type="button">Add to library</button>
+      <button id="sp-open-btn" type="button" class="secondary">Open in ScholarPulse</button>
+    </section>
+
+    <p id="sp-status" class="sp-popup__status" role="status"></p>
+
+    <details class="sp-popup__settings">
+      <summary>Settings</summary>
+      <label for="sp-api-base">API base URL</label>
+      <input id="sp-api-base" type="url" spellcheck="false" />
+
+      <label for="sp-web-base">Web base URL</label>
+      <input id="sp-web-base" type="url" spellcheck="false" />
+
+      <label for="sp-user-id">User ID (x-user-id)</label>
+      <input id="sp-user-id" type="text" spellcheck="false" placeholder="demo-user or Supabase sub" />
+
+      <button id="sp-save-config" type="button" class="secondary">Save settings</button>
+    </details>
+
+    <script src="../lib/config.js"></script>
+    <script src="../lib/doi.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

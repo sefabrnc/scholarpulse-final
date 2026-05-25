@@ -1,0 +1,20 @@
+{
+  "case_id": "edge-clamp-overflow",
+  "page": {
+    "width": 612,
+    "height": 792
+  },
+  "pymupdf_bbox": {
+    "x0": 500,
+    "y0": 700,
+    "x1": 640,
+    "y1": 820
+  },
+  "frontend_norm_rect": {
+    "x": 0.817,
+    "y": 0.8838,
+    "width": 0.183,
+    "height": 0.1162
+  },
+  "apply_frontend_clamp": true
+}

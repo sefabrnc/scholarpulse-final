@@ -1,0 +1,20 @@
+{
+  "case_id": "footnote-marker",
+  "page": {
+    "width": 612,
+    "height": 792
+  },
+  "pymupdf_bbox": {
+    "x0": 96,
+    "y0": 740,
+    "x1": 128,
+    "y1": 756
+  },
+  "frontend_norm_rect": {
+    "x": 0.1569,
+    "y": 0.9343,
+    "width": 0.0523,
+    "height": 0.0202
+  },
+  "apply_frontend_clamp": true
+}

@@ -1,0 +1,16 @@
+{
+  "description": "Real PDF coord-diff cases. Copy to pdf_cases.json and fill local PDF paths before Phase 1.5 pixel gate.",
+  "max_diff_px": 1.0,
+  "cases": [
+    { "case_id": "pdf-arxiv-transformer-p3", "pdf_path": "eval/coord_diff/pdfs/attention_is_all_you_need_p3.pdf", "page_number": 3, "sentence_hint": "Attention is all you need" },
+    { "case_id": "pdf-arxiv-bert-p2", "pdf_path": "eval/coord_diff/pdfs/bert_pretraining_p2.pdf", "page_number": 2, "sentence_hint": "BERT: Pre-training of Deep Bidirectional Transformers" },
+    { "case_id": "pdf-biomed-table", "pdf_path": "eval/coord_diff/pdfs/biomed_table_sample.pdf", "page_number": 4, "sentence_hint": "Table 1" },
+    { "case_id": "pdf-cs-landscape-figure", "pdf_path": "eval/coord_diff/pdfs/cs_landscape_figure.pdf", "page_number": 5, "sentence_hint": "Figure 2" },
+    { "case_id": "pdf-footnote-marker", "pdf_path": "eval/coord_diff/pdfs/footnote_cite_sample.pdf", "page_number": 6, "sentence_hint": "footnote citation" },
+    { "case_id": "pdf-two-column-wrap", "pdf_path": "eval/coord_diff/pdfs/two_column_wrap.pdf", "page_number": 7, "sentence_hint": "multi-line sentence wrap" },
+    { "case_id": "pdf-superscript-cite", "pdf_path": "eval/coord_diff/pdfs/superscript_cite.pdf", "page_number": 1, "sentence_hint": "superscript numeric cite" },
+    { "case_id": "pdf-author-year-paren", "pdf_path": "eval/coord_diff/pdfs/author_year_paren.pdf", "page_number": 8, "sentence_hint": "(Vaswani et al., 2017)" },
+    { "case_id": "pdf-scanned-skip-control", "pdf_path": "eval/coord_diff/pdfs/scanned_skip_control.pdf", "page_number": 1, "sentence_hint": "OCR skip control (<100 chars)" },
+    { "case_id": "pdf-math-heavy-skip", "pdf_path": "eval/coord_diff/pdfs/math_heavy_page.pdf", "page_number": 2, "sentence_hint": "math block skip" }
+  ]
+}

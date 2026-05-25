@@ -1,0 +1,20 @@
+{
+  "case_id": "inverted-bbox-order",
+  "page": {
+    "width": 612,
+    "height": 792
+  },
+  "pymupdf_bbox": {
+    "x0": 420,
+    "y0": 300,
+    "x1": 120,
+    "y1": 340
+  },
+  "frontend_norm_rect": {
+    "x": 0.6863,
+    "y": 0.3788,
+    "width": 0.0001,
+    "height": 0.0505
+  },
+  "apply_frontend_clamp": true
+}

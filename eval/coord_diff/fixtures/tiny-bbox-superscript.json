@@ -1,0 +1,20 @@
+{
+  "case_id": "tiny-bbox-superscript",
+  "page": {
+    "width": 612,
+    "height": 792
+  },
+  "pymupdf_bbox": {
+    "x0": 410.5,
+    "y0": 205.2,
+    "x1": 418.1,
+    "y1": 212.8
+  },
+  "frontend_norm_rect": {
+    "x": 0.6708,
+    "y": 0.2591,
+    "width": 0.0124,
+    "height": 0.0096
+  },
+  "apply_frontend_clamp": true
+}

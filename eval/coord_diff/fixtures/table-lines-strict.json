@@ -1,0 +1,20 @@
+{
+  "case_id": "table-lines-strict",
+  "page": {
+    "width": 612,
+    "height": 792
+  },
+  "pymupdf_bbox": {
+    "x0": 90,
+    "y0": 520,
+    "x1": 522,
+    "y1": 680
+  },
+  "frontend_norm_rect": {
+    "x": 0.1471,
+    "y": 0.6566,
+    "width": 0.7059,
+    "height": 0.202
+  },
+  "apply_frontend_clamp": true
+}

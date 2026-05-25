@@ -1,0 +1,19 @@
+{
+  "description": "Admin spot-check queue. Export from D1 cite_edges or Colab bulk ingest, then label with admin_label.py.",
+  "pairs": [
+    {
+      "pair_id": "spot-001",
+      "source_id": "<source_sentence_id>",
+      "target_id": "<target_sentence_id>",
+      "score": 0.91,
+      "context": "numeric bracket [12] on page 3"
+    },
+    {
+      "pair_id": "spot-002",
+      "source_id": "<source_sentence_id>",
+      "target_id": "<target_sentence_id>",
+      "score": 0.78,
+      "context": "figure cite — verify target sentence"
+    }
+  ]
+}

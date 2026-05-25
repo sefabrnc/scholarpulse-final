@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "ScholarPulse",
+  "description": "Citation intent badges on Scholar/PubMed and add papers to your ScholarPulse library.",
+  "version": "0.1.1",
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": [
+    "https://doi.org/*",
+    "https://dx.doi.org/*",
+    "https://scholar.google.com/*",
+    "https://pubmed.ncbi.nlm.nih.gov/*",
+    "http://127.0.0.1:8787/*",
+    "http://localhost:8787/*",
+    "http://localhost:3000/*"
+  ],
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://doi.org/*",
+        "https://dx.doi.org/*",
+        "https://scholar.google.com/*",
+        "https://pubmed.ncbi.nlm.nih.gov/*"
+      ],
+      "js": ["lib/doi.js", "content/content.js"],
+      "css": ["content/content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "ScholarPulse",
+    "default_popup": "popup/popup.html"
+  }
+}

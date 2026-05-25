@@ -1,0 +1,69 @@
+{
+  "defaultTodoId": "quality-control-work",
+  "updatedAt": "2026-05-25T22:37:00.000Z",
+  "lastQcRun": {
+    "generatedAt": "2026-05-24T22:37:02.335Z",
+    "errors": 0,
+    "bottlenecks": 21,
+    "logicRisks": 1,
+    "passedChecks": 10
+  },
+  "todos": {
+    "quality-control-work": {
+      "owner": "quality-control",
+      "workstream": "quality-control"
+    },
+    "standalone-web-sections": {
+      "owner": "web-platform",
+      "workstream": "web"
+    },
+    "shareable-links": {
+      "owner": "web-platform",
+      "workstream": "web"
+    },
+    "collections-tags": {
+      "owner": "web-platform",
+      "workstream": "web"
+    },
+    "observability-stack": {
+      "owner": "api-platform",
+      "workstream": "api"
+    },
+    "circuit-breaker-dlq": {
+      "owner": "reliability",
+      "workstream": "api"
+    }
+  },
+  "rules": [
+    {
+      "pathPrefix": "apps/api/src/observability.ts",
+      "todoId": "observability-stack"
+    },
+    {
+      "category": "Errors",
+      "pathPrefix": "apps/api/",
+      "todoId": "observability-stack"
+    },
+    {
+      "category": "Bottlenecks",
+      "pathPrefix": "apps/api/src/index.ts",
+      "todoId": "circuit-breaker-dlq"
+    },
+    {
+      "pathPrefix": "apps/web/app/api/public/",
+      "todoId": "shareable-links"
+    },
+    {
+      "pathPrefix": "apps/web/components/library/LibraryTimelinePreview.tsx",
+      "todoId": "collections-tags"
+    },
+    {
+      "pathPrefix": "apps/web/",
+      "todoId": "standalone-web-sections"
+    },
+    {
+      "pathPrefix": "apps/api/",
+      "todoId": "observability-stack"
+    }
+  ]
+}

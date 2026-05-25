@@ -1,0 +1,367 @@
+{
+  "version": 1,
+  "generatedAt": "2026-05-24T22:37:02.335Z",
+  "summary": {
+    "errors": 0,
+    "bottlenecks": 21,
+    "logicRisks": 1,
+    "passedChecks": 10,
+    "skippedChecks": 4,
+    "totalFindings": 22
+  },
+  "checks": [
+    {
+      "name": "apps/api:typecheck",
+      "status": "passed",
+      "details": "Command completed without errors",
+      "command": "corepack pnpm --filter @scholarpulse/api typecheck"
+    },
+    {
+      "name": "apps/api:build",
+      "status": "passed",
+      "details": "Command completed without errors",
+      "command": "corepack pnpm --filter @scholarpulse/api build"
+    },
+    {
+      "name": "apps/api:lint",
+      "status": "skipped",
+      "details": "Script is not configured in package.json",
+      "command": null
+    },
+    {
+      "name": "apps/api:test",
+      "status": "skipped",
+      "details": "Script is not configured in package.json",
+      "command": null
+    },
+    {
+      "name": "apps/web:typecheck",
+      "status": "passed",
+      "details": "Command completed without errors",
+      "command": "corepack pnpm --filter @scholarpulse/web typecheck"
+    },
+    {
+      "name": "apps/web:build",
+      "status": "passed",
+      "details": "Command completed without errors",
+      "command": "corepack pnpm --filter @scholarpulse/web build"
+    },
+    {
+      "name": "apps/web:lint",
+      "status": "skipped",
+      "details": "Script is not configured in package.json",
+      "command": null
+    },
+    {
+      "name": "apps/web:test",
+      "status": "skipped",
+      "details": "Script is not configured in package.json",
+      "command": null
+    },
+    {
+      "name": "static:explicit-any",
+      "status": "passed",
+      "details": "No matches found",
+      "command": "node-regex \\bany\\b|as\\s+any apps/api apps/web"
+    },
+    {
+      "name": "static:todo-fixme",
+      "status": "passed",
+      "details": "Matches detected via Node regex fallback",
+      "command": "node-regex TODO|FIXME apps/api apps/web"
+    },
+    {
+      "name": "static:empty-catch",
+      "status": "passed",
+      "details": "No matches found",
+      "command": "node-regex catch\\s*\\([^)]*\\)\\s*\\{\\s*\\} apps/api apps/web"
+    },
+    {
+      "name": "static:fallback-only",
+      "status": "passed",
+      "details": "Matches detected via Node regex fallback",
+      "command": "node-regex \\|\\|\\s*(\\{\\}|\\[\\]|''|\"\"|0|false) apps/api apps/web"
+    },
+    {
+      "name": "static:uncaught-promise",
+      "status": "passed",
+      "details": "No matches found",
+      "command": "node-regex void\\s+[^;]+\\( apps/api apps/web"
+    },
+    {
+      "name": "heuristic:performance",
+      "status": "passed",
+      "details": "Scanned 114 source files for bottleneck signals",
+      "command": null
+    }
+  ],
+  "findings": {
+    "errors": [],
+    "bottlenecks": [
+      {
+        "severity": "low",
+        "file": "apps/api/src/index.ts",
+        "line": 518,
+        "issue": "Nested map operations may increase render/computation cost",
+        "suggestedFix": "Flatten loops or memoize expensive transformations.",
+        "owner": "reliability",
+        "workstream": "api",
+        "linkedTodoId": "circuit-breaker-dlq"
+      },
+      {
+        "severity": "low",
+        "file": "apps/api/src/index.ts",
+        "line": 892,
+        "issue": "Nested map operations may increase render/computation cost",
+        "suggestedFix": "Flatten loops or memoize expensive transformations.",
+        "owner": "reliability",
+        "workstream": "api",
+        "linkedTodoId": "circuit-breaker-dlq"
+      },
+      {
+        "severity": "low",
+        "file": "apps/api/src/index.ts",
+        "line": 1223,
+        "issue": "Nested map operations may increase render/computation cost",
+        "suggestedFix": "Flatten loops or memoize expensive transformations.",
+        "owner": "reliability",
+        "workstream": "api",
+        "linkedTodoId": "circuit-breaker-dlq"
+      },
+      {
+        "severity": "low",
+        "file": "apps/api/src/index.ts",
+        "line": 1237,
+        "issue": "Nested map operations may increase render/computation cost",
+        "suggestedFix": "Flatten loops or memoize expensive transformations.",
+        "owner": "reliability",
+        "workstream": "api",
+        "linkedTodoId": "circuit-breaker-dlq"
+      },
+      {
+        "severity": "low",
+        "file": "apps/api/src/index.ts",
+        "line": 1573,
+        "issue": "Nested map operations may increase render/computation cost",
+        "suggestedFix": "Flatten loops or memoize expensive transformations.",
+        "owner": "reliability",
+        "workstream": "api",
+        "linkedTodoId": "circuit-breaker-dlq"
+      },
+      {
+        "severity": "medium",
+        "file": "apps/api/src/index.ts",
+        "line": 2378,
+        "issue": "Potential unbounded query without LIMIT heuristic",
+        "suggestedFix": "Add LIMIT/pagination or explain why full scan is acceptable.",
+        "owner": "reliability",
+        "workstream": "api",
+        "linkedTodoId": "circuit-breaker-dlq"
+      },
+      {
+        "severity": "medium",
+        "file": "apps/api/src/index.ts",
+        "line": 2946,
+        "issue": "Potential unbounded query without LIMIT heuristic",
+        "suggestedFix": "Add LIMIT/pagination or explain why full scan is acceptable.",
+        "owner": "reliability",
+        "workstream": "api",
+        "linkedTodoId": "circuit-breaker-dlq"
+      },
+      {
+        "severity": "medium",
+        "file": "apps/api/src/index.ts",
+        "line": 2954,
+        "issue": "Potential unbounded query without LIMIT heuristic",
+        "suggestedFix": "Add LIMIT/pagination or explain why full scan is acceptable.",
+        "owner": "reliability",
+        "workstream": "api",
+        "linkedTodoId": "circuit-breaker-dlq"
+      },
+      {
+        "severity": "low",
+        "file": "apps/api/src/index.ts",
+        "line": 4275,
+        "issue": "Nested map operations may increase render/computation cost",
+        "suggestedFix": "Flatten loops or memoize expensive transformations.",
+        "owner": "reliability",
+        "workstream": "api",
+        "linkedTodoId": "circuit-breaker-dlq"
+      },
+      {
+        "severity": "low",
+        "file": "apps/api/src/index.ts",
+        "line": 4299,
+        "issue": "Nested map operations may increase render/computation cost",
+        "suggestedFix": "Flatten loops or memoize expensive transformations.",
+        "owner": "reliability",
+        "workstream": "api",
+        "linkedTodoId": "circuit-breaker-dlq"
+      },
+      {
+        "severity": "low",
+        "file": "apps/api/src/index.ts",
+        "line": 4433,
+        "issue": "Nested map operations may increase render/computation cost",
+        "suggestedFix": "Flatten loops or memoize expensive transformations.",
+        "owner": "reliability",
+        "workstream": "api",
+        "linkedTodoId": "circuit-breaker-dlq"
+      },
+      {
+        "severity": "medium",
+        "file": "apps/api/src/index.ts",
+        "line": 5483,
+        "issue": "Potential unbounded query without LIMIT heuristic",
+        "suggestedFix": "Add LIMIT/pagination or explain why full scan is acceptable.",
+        "owner": "reliability",
+        "workstream": "api",
+        "linkedTodoId": "circuit-breaker-dlq"
+      },
+      {
+        "severity": "low",
+        "file": "apps/api/src/index.ts",
+        "line": 6264,
+        "issue": "Nested map operations may increase render/computation cost",
+        "suggestedFix": "Flatten loops or memoize expensive transformations.",
+        "owner": "reliability",
+        "workstream": "api",
+        "linkedTodoId": "circuit-breaker-dlq"
+      },
+      {
+        "severity": "medium",
+        "file": "apps/api/src/index.ts",
+        "line": 6399,
+        "issue": "Potential unbounded query without LIMIT heuristic",
+        "suggestedFix": "Add LIMIT/pagination or explain why full scan is acceptable.",
+        "owner": "reliability",
+        "workstream": "api",
+        "linkedTodoId": "circuit-breaker-dlq"
+      },
+      {
+        "severity": "low",
+        "file": "apps/api/src/observability.ts",
+        "line": 164,
+        "issue": "Nested map operations may increase render/computation cost",
+        "suggestedFix": "Flatten loops or memoize expensive transformations.",
+        "owner": "api-platform",
+        "workstream": "api",
+        "linkedTodoId": "observability-stack"
+      },
+      {
+        "severity": "medium",
+        "file": "apps/web/app/channels/page.tsx",
+        "line": 59,
+        "issue": "Potential unbounded query without LIMIT heuristic",
+        "suggestedFix": "Add LIMIT/pagination or explain why full scan is acceptable.",
+        "owner": "web-platform",
+        "workstream": "web",
+        "linkedTodoId": "standalone-web-sections"
+      },
+      {
+        "severity": "low",
+        "file": "apps/web/components/library/CollectionTree.tsx",
+        "line": 32,
+        "issue": "Nested map operations may increase render/computation cost",
+        "suggestedFix": "Flatten loops or memoize expensive transformations.",
+        "owner": "web-platform",
+        "workstream": "web",
+        "linkedTodoId": "standalone-web-sections"
+      },
+      {
+        "severity": "medium",
+        "file": "apps/web/components/library/CollectionTree.tsx",
+        "line": 203,
+        "issue": "Potential unbounded query without LIMIT heuristic",
+        "suggestedFix": "Add LIMIT/pagination or explain why full scan is acceptable.",
+        "owner": "web-platform",
+        "workstream": "web",
+        "linkedTodoId": "standalone-web-sections"
+      },
+      {
+        "severity": "medium",
+        "file": "apps/web/components/library/ExportLibraryModal.tsx",
+        "line": 80,
+        "issue": "Potential unbounded query without LIMIT heuristic",
+        "suggestedFix": "Add LIMIT/pagination or explain why full scan is acceptable.",
+        "owner": "web-platform",
+        "workstream": "web",
+        "linkedTodoId": "standalone-web-sections"
+      },
+      {
+        "severity": "medium",
+        "file": "apps/web/components/library/LibraryTimelinePreview.tsx",
+        "line": 87,
+        "issue": "Potential unbounded query without LIMIT heuristic",
+        "suggestedFix": "Add LIMIT/pagination or explain why full scan is acceptable.",
+        "owner": "web-platform",
+        "workstream": "web",
+        "linkedTodoId": "collections-tags"
+      },
+      {
+        "severity": "medium",
+        "file": "apps/web/components/library/LibraryTimelinePreview.tsx",
+        "line": 120,
+        "issue": "Potential unbounded query without LIMIT heuristic",
+        "suggestedFix": "Add LIMIT/pagination or explain why full scan is acceptable.",
+        "owner": "web-platform",
+        "workstream": "web",
+        "linkedTodoId": "collections-tags"
+      }
+    ],
+    "logicRisks": [
+      {
+        "severity": "low",
+        "file": "apps/api/src/index.ts",
+        "line": 5769,
+        "issue": "Pending TODO/FIXME marker found",
+        "suggestedFix": "Track this as an explicit task or resolve before release.",
+        "owner": "api-platform",
+        "workstream": "api",
+        "linkedTodoId": "observability-stack"
+      }
+    ]
+  },
+  "passedChecks": [
+    {
+      "name": "apps/api:typecheck",
+      "details": "Command completed without errors"
+    },
+    {
+      "name": "apps/api:build",
+      "details": "Command completed without errors"
+    },
+    {
+      "name": "apps/web:typecheck",
+      "details": "Command completed without errors"
+    },
+    {
+      "name": "apps/web:build",
+      "details": "Command completed without errors"
+    },
+    {
+      "name": "static:explicit-any",
+      "details": "No matches found"
+    },
+    {
+      "name": "static:todo-fixme",
+      "details": "Matches detected via Node regex fallback"
+    },
+    {
+      "name": "static:empty-catch",
+      "details": "No matches found"
+    },
+    {
+      "name": "static:fallback-only",
+      "details": "Matches detected via Node regex fallback"
+    },
+    {
+      "name": "static:uncaught-promise",
+      "details": "No matches found"
+    },
+    {
+      "name": "heuristic:performance",
+      "details": "Scanned 114 source files for bottleneck signals"
+    }
+  ]
+}

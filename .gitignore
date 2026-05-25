@@ -1,0 +1,10 @@
+node_modules
+.pnpm-store
+.turbo
+.next
+.vercel
+.wrangler
+dist
+coverage
+*.log
+tsconfig.tsbuildinfo

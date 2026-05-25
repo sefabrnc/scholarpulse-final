@@ -1,0 +1,586 @@
+{
+  "version": 1,
+  "generatedAt": "2026-05-24T16:30:00.000Z",
+  "methodology": {
+    "webResearchWindow": "2024-2026",
+    "sources": [
+      "Elicit vs Scite vs ResearchRabbit comparisons (2025-2026)",
+      "Semantic Scholar / Connected Papers reviews (2025-2026)",
+      "Semantic Reader Project (AI2, 2024-2025)",
+      "Scholar Inbox ACL 2025 demo paper",
+      "WisPaper arxiv 2512.06879 workflow fragmentation study",
+      "Zotero forums migration threads (2024-2025)",
+      "scholarpulse-final codebase audit",
+      ".qc/latest-report.json cross-reference"
+    ],
+    "assumptions": [
+      "Primary personas inferred from competitor marketing and CHI/ACL demo papers; no direct ScholarPulse user interviews yet.",
+      "Mobile/offline expectations extrapolated from Semantic Reader and PWA competitor claims.",
+      "Timeline trust sensitivity estimated from Scite/Elicit trust literature; not validated with our users."
+    ]
+  },
+  "summary": {
+    "totalFrictionPoints": 18,
+    "totalUnmetWants": 16,
+    "criticalGaps": 6,
+    "codeMaturity": {
+      "api": "broad endpoint coverage; build/typecheck failing per QC",
+      "web": "desk flow scaffold; section pages minimal; no real PDF viewer",
+      "colab": "8-pass skeleton; ML models stubbed",
+      "publicPages": "Worker public routes exist; web public routes absent in final"
+    }
+  },
+  "personas": [
+    {
+      "id": "phd-student",
+      "label": "PhD student",
+      "primaryJobs": ["discover papers", "trace citations", "organize reading list", "write related work"],
+      "topToolsToday": ["Zotero", "Semantic Scholar", "Connected Papers", "Elicit"]
+    },
+    {
+      "id": "pi",
+      "label": "PI / lab lead",
+      "primaryJobs": ["monitor field", "delegate reading", "assess claim survival", "share reading lists"],
+      "topToolsToday": ["Scite", "Google Scholar alerts", "Zotero group libraries"]
+    },
+    {
+      "id": "industry-researcher",
+      "label": "Industry researcher",
+      "primaryJobs": ["fast triage", "export citations", "cross-team share links", "patent-adjacent prior art"],
+      "topToolsToday": ["Elicit", "Semantic Scholar", "browser extensions"]
+    }
+  ],
+  "marketPainPoints": [
+    {
+      "id": "MP-01",
+      "theme": "workflow_fragmentation",
+      "description": "Researchers juggle separate tools for discovery, library organization, and monitoring new papers; each handoff costs manual effort.",
+      "evidence": "WisPaper (2025) identifies three-stage fragmentation: search engines, reference managers, alert services.",
+      "competitorsAffected": ["Zotero", "Elicit", "Semantic Scholar"]
+    },
+    {
+      "id": "MP-02",
+      "theme": "library_import_pain",
+      "description": "BibTeX/RIS/Zotero imports often flatten folder hierarchies, lose attachments/annotations, or fail on large libraries without chunking.",
+      "evidence": "Zotero forums 2024-2025; Paperpile-to-Zotero migration tools exist because built-in importers lose structure.",
+      "competitorsAffected": ["Zotero", "Mendeley", "Paperpile"]
+    },
+    {
+      "id": "MP-03",
+      "theme": "feed_cold_start",
+      "description": "Personalized feeds require onboarding signals; users abandon when initial recommendations feel random.",
+      "evidence": "Scholar Inbox ACL 2025 demo emphasizes onboarding + active learning for cold start.",
+      "competitorsAffected": ["Scholar Inbox", "ResearchRabbit", "Semantic Scholar feeds"]
+    },
+    {
+      "id": "MP-04",
+      "theme": "citation_context_without_discovery",
+      "description": "Scite excels at supports/contradicts context but does not help find, screen, or organize papers end-to-end.",
+      "evidence": "Elicit vs Scite 2026 comparison: complementary gaps on both sides.",
+      "competitorsAffected": ["Scite"]
+    },
+    {
+      "id": "MP-05",
+      "theme": "ai_extraction_unreliability",
+      "description": "AI table/data extraction fails on non-standard layouts, scanned PDFs, and non-English papers; users must verify manually.",
+      "evidence": "Elicit 2026 review: extraction drops on complex tables and OCR PDFs.",
+      "competitorsAffected": ["Elicit"]
+    },
+    {
+      "id": "MP-06",
+      "theme": "visual_graph_limits",
+      "description": "Citation graph tools limit seed inputs, show stale data, or overload servers; discovery depth is constrained.",
+      "evidence": "Connected Papers: single seed, graph cache overload; ResearchRabbit MAG stopped 2021.",
+      "competitorsAffected": ["Connected Papers", "ResearchRabbit"]
+    },
+    {
+      "id": "MP-07",
+      "theme": "pdf_mobile_accessibility",
+      "description": "Static PDFs are hard on mobile, screen readers, and small viewports; split-view back-and-forth increases cognitive load.",
+      "evidence": "Semantic Reader Project (AI2): static PDF barriers for mobile and a11y.",
+      "competitorsAffected": ["All PDF-first tools"]
+    },
+    {
+      "id": "MP-08",
+      "theme": "search_filter_limits",
+      "description": "Even strong discovery engines offer limited sort/filter depth for niche domains and non-English corpora.",
+      "evidence": "Semantic Scholar 2025 review: uneven coverage, limited filter granularity.",
+      "competitorsAffected": ["Semantic Scholar"]
+    }
+  ],
+  "frictionPoints": [
+    {
+      "rank": 1,
+      "id": "FP-01",
+      "issue": "Desk uses PDF placeholder, not real PDF.js viewer — core read/trace loop feels fake",
+      "severity": "critical",
+      "personas": ["phd-student", "pi", "industry-researcher"],
+      "userImpact": "Cannot validate marker click, snippet crop, or split-view in production-like conditions.",
+      "codeEvidence": "apps/web/components/paper/DocumentPane.tsx uses pdf-placeholder div; apps/web/app/page.tsx sample text blocks only.",
+      "suggestedFix": "Wire DocumentPane to PDF.js stack with proxy fetch, marker layer, and snippet fast-path per plan.",
+      "linkedTodoId": "pdf-render-optimization",
+      "source": "code-audit"
+    },
+    {
+      "rank": 2,
+      "id": "FP-02",
+      "issue": "Auth is demo localStorage x-user-id; no Supabase session gate",
+      "severity": "critical",
+      "personas": ["phd-student", "pi"],
+      "userImpact": "Onboarding confusion, no secure library scope, GDPR delete untestable from real UX.",
+      "codeEvidence": "apps/web/lib/api/client.ts DEFAULT_USER_ID=demo-user; no middleware.ts in scholarpulse-final.",
+      "suggestedFix": "Ship cf-pages-auth middleware with JWT verify and profile bootstrap.",
+      "linkedTodoId": "cf-pages-auth",
+      "source": "code-audit"
+    },
+    {
+      "rank": 3,
+      "id": "FP-03",
+      "issue": "Library import/upload missing — users cannot migrate from Zotero",
+      "severity": "high",
+      "personas": ["phd-student", "pi"],
+      "userImpact": "Switching cost blocks adoption; matches top Zotero forum pain (structure + attachments lost).",
+      "codeEvidence": "No /api/library/import or /api/papers/upload in apps/api/src/index.ts; library page is collections+resolve only.",
+      "suggestedFix": "Implement bib-rs-import with chunked parse, unknown-DOI ingest queue, import progress UI.",
+      "linkedTodoId": "bib-rs-import",
+      "source": "web-research+code-audit"
+    },
+    {
+      "rank": 4,
+      "id": "FP-04",
+      "issue": "Timeline/cite trust opaque — no confidence tier or intent badges in UI",
+      "severity": "high",
+      "personas": ["pi", "industry-researcher"],
+      "userImpact": "Users will not trust AI-linked snippets without supports/contradicts/medium-high badges (Scite baseline).",
+      "codeEvidence": "TimelineTab exists but relation_type/confidence_tier surfacing not verified in web; colab pass5 intent stubbed.",
+      "suggestedFix": "Show confidence_tier + relation_type on timeline cards; filter toggle for high-only.",
+      "linkedTodoId": "citation-intent-pipeline",
+      "source": "web-research+code-audit"
+    },
+    {
+      "rank": 5,
+      "id": "FP-05",
+      "issue": "Feed relevance opaque — reason string only, no onboarding wizard",
+      "severity": "high",
+      "personas": ["phd-student", "pi"],
+      "userImpact": "Cold-start feed feels random; Scholar Inbox shows users need guided interest setup.",
+      "codeEvidence": "apps/web/app/feed/page.tsx lists score/reason; watch page is comma-separated textarea only.",
+      "suggestedFix": "Onboarding: seed from library DOIs + topic pickers; show why each item matched (topic/cite neighbor/semantic).",
+      "linkedTodoId": "feed-system",
+      "source": "web-research+code-audit"
+    },
+    {
+      "rank": 6,
+      "id": "FP-06",
+      "issue": "Annotations detached from PDF — form-based notes page, no highlight overlay",
+      "severity": "high",
+      "personas": ["phd-student", "pi"],
+      "userImpact": "Notes feel like a separate app; breaks read-annotate-trace loop users expect from Zotero/ResearchRabbit.",
+      "codeEvidence": "apps/web/app/notes/page.tsx creates fixed normRect; no PDF overlay integration on desk.",
+      "suggestedFix": "Annotation layer on PDF.js with select-to-highlight and note popup.",
+      "linkedTodoId": "annotations-system",
+      "source": "web-research+code-audit"
+    },
+    {
+      "rank": 7,
+      "id": "FP-07",
+      "issue": "GET /api/cite/elements missing from Worker — overlay falls back to mock",
+      "severity": "high",
+      "personas": ["phd-student", "pi"],
+      "userImpact": "Figure/table click-to-timeline (unique differentiator) cannot work against real backend.",
+      "codeEvidence": "apps/web/app/api/cite/elements/route.ts mock fallback; grep shows no elements route in Worker index.ts.",
+      "suggestedFix": "Add Worker route querying cite_nodes by doi/page/element_type; remove mock default in production.",
+      "linkedTodoId": "pdf-overlay-layer",
+      "source": "code-audit"
+    },
+    {
+      "rank": 8,
+      "id": "FP-08",
+      "issue": "Build/typecheck failing — product not shippable to real users",
+      "severity": "high",
+      "personas": ["phd-student", "pi", "industry-researcher"],
+      "userImpact": "Any user testing hits broken deploy artifacts.",
+      "codeEvidence": ".qc/latest-report.json: apps/api and apps/web typecheck+build failed.",
+      "suggestedFix": "Fix type errors blocking build; add CI gate before user beta.",
+      "linkedTodoId": "standalone-web-sections",
+      "source": "qc-report"
+    },
+    {
+      "rank": 9,
+      "id": "FP-09",
+      "issue": "PDF load latency and publisher throttling unhandled in UX",
+      "severity": "medium",
+      "personas": ["phd-student", "industry-researcher"],
+      "userImpact": "Cold snippet render >2s and 429 errors feel like product failure.",
+      "codeEvidence": "Proxy worker exists; desk has no loading/error/retry states for publisher_throttled.",
+      "suggestedFix": "Progressive loading UI, retry backoff messaging, warm-cache indicator.",
+      "linkedTodoId": "pdf-proxy-worker",
+      "source": "web-research+code-audit"
+    },
+    {
+      "rank": 10,
+      "id": "FP-10",
+      "issue": "Mobile/responsive desk not implemented — PDF split unusable on phone",
+      "severity": "medium",
+      "personas": ["phd-student", "industry-researcher"],
+      "userImpact": "Semantic Reader notes increasing mobile access; static split layout fails.",
+      "codeEvidence": "Plan marks dark-mode-pwa completed but desk-shell has no bottom-sheet/touch gestures in final web.",
+      "suggestedFix": "CanvasPanel bottom-sheet, pinch zoom, single-pane timeline on narrow viewports.",
+      "linkedTodoId": "dark-mode-pwa",
+      "source": "web-research+assumption"
+    },
+    {
+      "rank": 11,
+      "id": "FP-11",
+      "issue": "Search filters exist in API but no filter UI",
+      "severity": "medium",
+      "personas": ["pi", "industry-researcher"],
+      "userImpact": "Power users expect year/citation/journal/topic filters (Semantic Scholar/Scite baseline).",
+      "codeEvidence": "apps/api/src/index.ts /api/search supports year_from, min_citations, etc.; no search page in final web.",
+      "suggestedFix": "Add /search page with filter chips and sort options wired to hybrid search API.",
+      "linkedTodoId": "search-filters",
+      "source": "code-audit"
+    },
+    {
+      "rank": 12,
+      "id": "FP-12",
+      "issue": "Public share pages absent in scholarpulse-final web",
+      "severity": "medium",
+      "personas": ["pi", "industry-researcher"],
+      "userImpact": "Cannot share timeline/cite links with collaborators (expected from Scite/Elicit/Connected Papers).",
+      "codeEvidence": "Worker has /api/public/* routes; apps/web has no app/paper, app/cite, app/timeline routes.",
+      "suggestedFix": "Port public read-only pages from legacy repo or implement in final web app.",
+      "linkedTodoId": "shareable-links",
+      "source": "code-audit"
+    },
+    {
+      "rank": 13,
+      "id": "FP-13",
+      "issue": "Colab pipeline ML stubs — cite graph quality not production-grade",
+      "severity": "medium",
+      "personas": ["pi"],
+      "userImpact": "False-positive edges erode trust faster than missing features.",
+      "codeEvidence": "colab/pipeline/README.md: FAISS, embedding, reranker, intent still stubbed.",
+      "suggestedFix": "Complete colab-pipeline-8pass with real models + cite-quality-eval gate >=0.95.",
+      "linkedTodoId": "colab-pipeline-8pass",
+      "source": "code-audit"
+    },
+    {
+      "rank": 14,
+      "id": "FP-14",
+      "issue": "Channels/detail placeholder — no unified feed+library split for projects",
+      "severity": "low",
+      "personas": ["phd-student", "pi"],
+      "userImpact": "Project-scoped reading (thesis chapter, grant) stays manual.",
+      "codeEvidence": "apps/web/app/channels/[id]/page.tsx explicit TODO placeholder.",
+      "suggestedFix": "Channel = filtered event stream + library subset; wire collections + feed merge.",
+      "linkedTodoId": "standalone-web-sections",
+      "source": "code-audit"
+    },
+    {
+      "rank": 15,
+      "id": "FP-15",
+      "issue": "No browser extension for in-context cite badges",
+      "severity": "medium",
+      "personas": ["industry-researcher", "pi"],
+      "userImpact": "Daily workflow stays on Google Scholar/PubMed without ScholarPulse context.",
+      "codeEvidence": "GET /api/papers/:doi/badge exists; browser-extension todo pending.",
+      "suggestedFix": "MV3 extension with Add to Library + intent counts on Scholar/PubMed.",
+      "linkedTodoId": "browser-extension",
+      "source": "web-research+code-audit"
+    },
+    {
+      "rank": 16,
+      "id": "FP-16",
+      "issue": "Offline/PWA reading not verifiable end-to-end",
+      "severity": "low",
+      "personas": ["phd-student"],
+      "userImpact": "Travel/offline reading fails despite competitor PWA claims.",
+      "codeEvidence": "IndexedDB cache helpers referenced in README; no service worker verification in web app tree.",
+      "suggestedFix": "Validate manifest + SW caches visited PDFs; offline badge in library.",
+      "linkedTodoId": "dark-mode-pwa",
+      "source": "assumption"
+    },
+    {
+      "rank": 17,
+      "id": "FP-17",
+      "issue": "Profile/settings local-only — account delete UX missing",
+      "severity": "medium",
+      "personas": ["phd-student", "pi"],
+      "userImpact": "GDPR expectation unmet; settings changes do not persist across devices.",
+      "codeEvidence": "apps/web/app/profile/page.tsx and settings/page.tsx TODO for backend bind.",
+      "suggestedFix": "Wire DELETE /api/user/me with soft-confirm modal in settings.",
+      "linkedTodoId": "account-delete-gdpr",
+      "source": "code-audit"
+    },
+    {
+      "rank": 18,
+      "id": "FP-18",
+      "issue": "Marker click discoverability — users may not know only [12] spans are clickable",
+      "severity": "low",
+      "personas": ["phd-student"],
+      "userImpact": "First-session confusion if affordance (underline, tooltip) is weak on real PDF text layer.",
+      "codeEvidence": "MarkerTextBlock on sample strings; real PdfTextLayer integration not in final desk.",
+      "suggestedFix": "First-run coach mark on first marker hover; consistent tooltip 'Show timeline'.",
+      "linkedTodoId": "cite-marker-detection",
+      "source": "assumption"
+    }
+  ],
+  "unmetWants": [
+    {
+      "rank": 1,
+      "id": "UW-01",
+      "want": "One-click Zotero/BibTeX import preserving folders and tags",
+      "marketSignal": "Zotero migration threads + Paperpile migration tooling demand",
+      "currentState": "pending",
+      "linkedTodoId": "bib-rs-import"
+    },
+    {
+      "rank": 2,
+      "id": "UW-02",
+      "want": "Real PDF reading with citation marker click and split-view sync",
+      "marketSignal": "Semantic Reader + our unique auto split differentiator",
+      "currentState": "scaffold-only",
+      "linkedTodoId": "split-view-auto"
+    },
+    {
+      "rank": 3,
+      "id": "UW-03",
+      "want": "Sentence-level citation intent (supports/contradicts/method) visible while reading",
+      "marketSignal": "Scite core value prop",
+      "currentState": "pipeline-in-progress",
+      "linkedTodoId": "citation-intent-pipeline"
+    },
+    {
+      "rank": 4,
+      "id": "UW-04",
+      "want": "Personal PDF upload for closed-access papers",
+      "marketSignal": "Elicit, Zotero, ResearchRabbit all support user PDFs",
+      "currentState": "pending",
+      "linkedTodoId": "pdf-upload-ingest"
+    },
+    {
+      "rank": 5,
+      "id": "UW-05",
+      "want": "Daily personalized feed with clear match reasons",
+      "marketSignal": "Scholar Inbox daily digest + WisPaper AI Feeds loop",
+      "currentState": "api-ready-ui-minimal",
+      "linkedTodoId": "feed-system"
+    },
+    {
+      "rank": 6,
+      "id": "UW-06",
+      "want": "TLDR / quick summary on paper cards before opening PDF",
+      "marketSignal": "Semantic Scholar TLDR; Elicit extraction summaries",
+      "currentState": "pending",
+      "linkedTodoId": "tldr-summary"
+    },
+    {
+      "rank": 7,
+      "id": "UW-07",
+      "want": "In-browser extension showing cite impact on Scholar/PubMed",
+      "marketSignal": "Scite extension daily utility",
+      "currentState": "pending",
+      "linkedTodoId": "browser-extension"
+    },
+    {
+      "rank": 8,
+      "id": "UW-08",
+      "want": "Figure/table click opens citation timeline",
+      "marketSignal": "Unique vs all competitors; plan differentiator",
+      "currentState": "partial-mock",
+      "linkedTodoId": "figure-table-cite-detection"
+    },
+    {
+      "rank": 9,
+      "id": "UW-09",
+      "want": "Advanced search filters (year, citations, journal, topic, author)",
+      "marketSignal": "Semantic Scholar/Scite/Elicit baseline",
+      "currentState": "api-only",
+      "linkedTodoId": "search-filters"
+    },
+    {
+      "rank": 10,
+      "id": "UW-10",
+      "want": "Continue-where-left-off reading sessions",
+      "marketSignal": "Kindle/e-reader expectation; plan feature",
+      "currentState": "api-in-progress",
+      "linkedTodoId": "reading-sessions"
+    },
+    {
+      "rank": 11,
+      "id": "UW-11",
+      "want": "Shareable public links for paper/timeline/cite",
+      "marketSignal": "Scite, Elicit, Connected Papers sharing",
+      "currentState": "worker-only",
+      "linkedTodoId": "shareable-links"
+    },
+    {
+      "rank": 12,
+      "id": "UW-12",
+      "want": "BibTeX/RIS export from library and cite subgraph",
+      "marketSignal": "Universal writing workflow need",
+      "currentState": "in-progress",
+      "linkedTodoId": "bib-export"
+    },
+    {
+      "rank": 13,
+      "id": "UW-13",
+      "want": "Influential citation badges on cards",
+      "marketSignal": "Scite influential cites parity",
+      "currentState": "pending",
+      "linkedTodoId": "influential-badges"
+    },
+    {
+      "rank": 14,
+      "id": "UW-14",
+      "want": "Saved searches with in-app notifications",
+      "marketSignal": "Scite/Elicit alerts; Scholar Inbox habit loop",
+      "currentState": "in-progress",
+      "linkedTodoId": "saved-searches"
+    },
+    {
+      "rank": 15,
+      "id": "UW-15",
+      "want": "Author/lab network and topic evolution exploration",
+      "marketSignal": "ResearchRabbit + unique topic evolution in plan",
+      "currentState": "api-in-progress-no-ui",
+      "linkedTodoId": "topics-evolution"
+    },
+    {
+      "rank": 16,
+      "id": "UW-16",
+      "want": "Report incorrect cite edge (trust loop)",
+      "marketSignal": "Users demand correction when AI cites wrong (assumption from Scite trust model)",
+      "currentState": "in-progress",
+      "linkedTodoId": "error-correction-system"
+    }
+  ],
+  "gapMatrix": [
+    {
+      "workflowStage": "discover",
+      "userExpectation": "Semantic search + filters + feed + graph expansion",
+      "have": "Hybrid /api/search with filters; /api/feed; /api/recommend; no search UI",
+      "gap": "high",
+      "linkedTodoId": "search-filters"
+    },
+    {
+      "workflowStage": "read",
+      "userExpectation": "Fast PDF load, markers, split-view, mobile",
+      "have": "Desk scaffold, proxy worker, render optimization code paths",
+      "gap": "critical",
+      "linkedTodoId": "pdf-render-optimization"
+    },
+    {
+      "workflowStage": "cite-trace",
+      "userExpectation": "Click marker -> timeline -> intent badges -> open target",
+      "have": "Timeline API + UI tab; intent/colab stub; mock PDF",
+      "gap": "high",
+      "linkedTodoId": "citation-intent-pipeline"
+    },
+    {
+      "workflowStage": "organize",
+      "userExpectation": "Import Zotero, collections, tags, export",
+      "have": "Collections API; export endpoint; no import",
+      "gap": "high",
+      "linkedTodoId": "bib-rs-import"
+    },
+    {
+      "workflowStage": "annotate",
+      "userExpectation": "Highlight on PDF, private notes",
+      "have": "Annotations CRUD; form-based notes page",
+      "gap": "high",
+      "linkedTodoId": "annotations-system"
+    },
+    {
+      "workflowStage": "monitor",
+      "userExpectation": "Watch topics, saved searches, notifications",
+      "have": "Interests API; saved_searches API; minimal watch UI",
+      "gap": "medium",
+      "linkedTodoId": "saved-searches"
+    },
+    {
+      "workflowStage": "share",
+      "userExpectation": "Public read-only links, SEO",
+      "have": "Worker public routes; web public pages missing",
+      "gap": "medium",
+      "linkedTodoId": "shareable-links"
+    }
+  ],
+  "recommendedNextSprint": {
+    "theme": "Trustworthy Read-and-Import Loop",
+    "durationWeeks": 2,
+    "items": [
+      {
+        "priority": 1,
+        "title": "Fix web/api build blockers",
+        "owner": "web-platform",
+        "linkedTodoId": "standalone-web-sections",
+        "rationale": "QC errors block any user beta."
+      },
+      {
+        "priority": 2,
+        "title": "Real PDF.js desk + marker layer",
+        "owner": "web-platform",
+        "linkedTodoId": "pdf-render-optimization",
+        "rationale": "Core product promise; top friction FP-01."
+      },
+      {
+        "priority": 3,
+        "title": "Supabase auth middleware",
+        "owner": "web-platform",
+        "linkedTodoId": "cf-pages-auth",
+        "rationale": "Secure user scope before library data."
+      },
+      {
+        "priority": 4,
+        "title": "Worker /api/cite/elements + timeline badges",
+        "owner": "api-platform",
+        "linkedTodoId": "pdf-overlay-layer",
+        "rationale": "Unblocks figure click + removes mock overlay."
+      },
+      {
+        "priority": 5,
+        "title": "BibTeX/RIS import MVP",
+        "owner": "api-platform",
+        "linkedTodoId": "bib-rs-import",
+        "rationale": "Top unmet want; Zotero migration pain."
+      },
+      {
+        "priority": 6,
+        "title": "Feed onboarding + explainability UI",
+        "owner": "web-platform",
+        "linkedTodoId": "feed-system",
+        "rationale": "Cold-start friction FP-05."
+      },
+      {
+        "priority": 7,
+        "title": "Intent/confidence on timeline cards",
+        "owner": "ml-pipeline",
+        "linkedTodoId": "citation-intent-pipeline",
+        "rationale": "Trust gap vs Scite."
+      },
+      {
+        "priority": 8,
+        "title": "Annotation overlay on PDF",
+        "owner": "web-platform",
+        "linkedTodoId": "annotations-system",
+        "rationale": "Complete read-annotate loop."
+      }
+    ]
+  },
+  "competitivePosition": {
+    "uniqueStrengths": [
+      "Coord-based sentence timeline with auto split + sync pulse (no edge UI)",
+      "Figure/table overlay click to timeline (when backend wired)",
+      "Privacy-preserving coord-only server (no full text stored)"
+    ],
+    "parityGaps": [
+      "Zotero import",
+      "Browser extension",
+      "TLDR on cards",
+      "Real PDF viewer in production web",
+      "Public share pages in final web app"
+    ]
+  }
+}

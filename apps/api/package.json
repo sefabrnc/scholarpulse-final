@@ -1,0 +1,20 @@
+{
+  "name": "@scholarpulse/api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "typecheck": "tsc --noEmit",
+    "build": "wrangler deploy --dry-run"
+  },
+  "dependencies": {
+    "@scholarpulse/shared": "workspace:*",
+    "hono": "^4.6.12"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260502.0",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.17.0"
+  }
+}

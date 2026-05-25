@@ -1,0 +1,4 @@
+pair_id,source_id,target_id,label,score,notes
+example-001,<source_sentence_id>,<target_sentence_id>,1,<ce_score_from_pipeline>,"positive: admin-verified cite match"
+example-002,<source_sentence_id>,<target_sentence_id>,0,<ce_score_from_pipeline>,"negative: same ref_index wrong target sentence"
+example-003,<source_sentence_id>,<target_sentence_id>,1,<ce_score_from_pipeline>,"positive: figure/table cite"

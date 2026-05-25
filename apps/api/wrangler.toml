@@ -1,0 +1,52 @@
+name = "scholarpulse-api"
+main = "src/index.ts"
+compatibility_date = "2026-05-24"
+compatibility_flags = ["nodejs_compat"]
+
+# --- Observability (production; see docs/observability-stack.md) ---
+#
+# Analytics Engine: durable custom HTTP metrics (RED). Requires Workers Paid.
+# Create dataset in dashboard, then uncomment and set dataset id:
+#
+# [[analytics_engine_datasets]]
+# binding = "METRICS"
+# dataset = "scholarpulse_http_metrics"
+#
+# Logpush: configure in Cloudflare dashboard (Worker -> Logs -> Logpush).
+# Recommended destination: R2 bucket with 30-day lifecycle. Not wrangler-managed.
+#
+# In-process fallback (always on): observability.ts + GET /api/internal/metrics/summary
+
+[[d1_databases]]
+binding = "DB"
+database_name = "scholarpulse_d1"
+database_id = "e1e54658-c2e8-48f6-b9ba-8ad28219aa0b"
+migrations_dir = "migrations"
+
+[[vectorize]]
+binding = "PAPER_VECTORS"
+index_name = "paper_vectors"
+
+[[vectorize]]
+binding = "SENTENCE_VECTORS"
+index_name = "sentence_vectors"
+
+# Optional transient PDF uploads (24h). Without this binding, upload metadata is stored in D1 only.
+# [[r2_buckets]]
+# binding = "UPLOADS_BUCKET"
+# bucket_name = "scholarpulse-uploads"
+
+[vars]
+PAPER_VECTOR_INDEX_NAME = "paper_vectors"
+SENTENCE_VECTOR_INDEX_NAME = "sentence_vectors"
+BULK_INGEST_MAX_PAPERS_PER_CHUNK = "50"
+BULK_INGEST_MAX_BODY_BYTES = "94371840"
+REVALIDATION_DEFAULT_STALE_SECONDS = "2592000"
+REVALIDATION_CRON_PAGE_LIMIT = "500"
+REVALIDATION_CRON_MAX_PAGES = "4"
+REVALIDATION_CRON_ALGORITHM_VERSION = "v1-revalidation-cron"
+REVALIDATION_CRON_DEFAULT_STATUS = "active"
+REVALIDATION_CRON_DEFAULT_CONFIDENCE_TIER = "medium"
+
+[triggers]
+crons = ["0 3 * * *"]

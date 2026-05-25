@@ -1,0 +1,20 @@
+{
+  "case_id": "wide-landscape-table",
+  "page": {
+    "width": 792,
+    "height": 612
+  },
+  "pymupdf_bbox": {
+    "x0": 48,
+    "y0": 72,
+    "x1": 744,
+    "y1": 312
+  },
+  "frontend_norm_rect": {
+    "x": 0.0606,
+    "y": 0.1176,
+    "width": 0.8788,
+    "height": 0.3922
+  },
+  "apply_frontend_clamp": true
+}

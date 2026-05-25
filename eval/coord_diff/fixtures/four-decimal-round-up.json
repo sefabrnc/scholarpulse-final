@@ -1,0 +1,20 @@
+{
+  "case_id": "four-decimal-round-up",
+  "page": {
+    "width": 1000,
+    "height": 1000
+  },
+  "pymupdf_bbox": {
+    "x0": 333.3335,
+    "y0": 666.6667,
+    "x1": 777.7778,
+    "y1": 888.8889
+  },
+  "frontend_norm_rect": {
+    "x": 0.3333,
+    "y": 0.6667,
+    "width": 0.4444,
+    "height": 0.2222
+  },
+  "apply_frontend_clamp": true
+}

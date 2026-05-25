@@ -1,0 +1,20 @@
+{
+  "case_id": "a4-portrait-sentence",
+  "page": {
+    "width": 595.28,
+    "height": 841.89
+  },
+  "pymupdf_bbox": {
+    "x0": 56.7,
+    "y0": 113.4,
+    "x1": 538.58,
+    "y1": 141.75
+  },
+  "frontend_norm_rect": {
+    "x": 0.0952,
+    "y": 0.1347,
+    "width": 0.8095,
+    "height": 0.0337
+  },
+  "apply_frontend_clamp": true
+}

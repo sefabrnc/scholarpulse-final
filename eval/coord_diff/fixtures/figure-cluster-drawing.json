@@ -1,0 +1,20 @@
+{
+  "case_id": "figure-cluster-drawing",
+  "page": {
+    "width": 612,
+    "height": 792
+  },
+  "pymupdf_bbox": {
+    "x0": 108,
+    "y0": 240,
+    "x1": 504,
+    "y1": 480
+  },
+  "frontend_norm_rect": {
+    "x": 0.1765,
+    "y": 0.303,
+    "width": 0.6471,
+    "height": 0.303
+  },
+  "apply_frontend_clamp": true
+}

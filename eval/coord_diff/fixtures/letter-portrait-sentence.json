@@ -1,0 +1,20 @@
+{
+  "case_id": "letter-portrait-sentence",
+  "page": {
+    "width": 612,
+    "height": 792
+  },
+  "pymupdf_bbox": {
+    "x0": 72,
+    "y0": 96,
+    "x1": 540,
+    "y1": 118
+  },
+  "frontend_norm_rect": {
+    "x": 0.1176,
+    "y": 0.1212,
+    "width": 0.7647,
+    "height": 0.0278
+  },
+  "apply_frontend_clamp": true
+}

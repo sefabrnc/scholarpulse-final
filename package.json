@@ -1,0 +1,15 @@
+{
+  "name": "scholarpulse-final",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@9.12.3",
+  "scripts": {
+    "dev:web": "corepack pnpm --filter @scholarpulse/web dev",
+    "dev:api": "corepack pnpm --filter @scholarpulse/api dev",
+    "typecheck": "corepack pnpm -r typecheck",
+    "build": "corepack pnpm -r build",
+    "qc:run": "node scripts/qc/run.js",
+    "qc:report": "node scripts/qc/print-report.js",
+    "qc:open": "node scripts/qc/open-report.js"
+  }
+}

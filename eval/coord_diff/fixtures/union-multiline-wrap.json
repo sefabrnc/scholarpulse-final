@@ -1,0 +1,20 @@
+{
+  "case_id": "union-multiline-wrap",
+  "page": {
+    "width": 612,
+    "height": 792
+  },
+  "pymupdf_bbox": {
+    "x0": 72,
+    "y0": 420,
+    "x1": 540,
+    "y1": 468
+  },
+  "frontend_norm_rect": {
+    "x": 0.1176,
+    "y": 0.5303,
+    "width": 0.7647,
+    "height": 0.0606
+  },
+  "apply_frontend_clamp": true
+}
