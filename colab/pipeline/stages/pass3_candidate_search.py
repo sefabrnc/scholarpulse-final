@@ -98,6 +98,14 @@ def run(context: PipelineContext, embedding_model: EmbeddingModel | None = None)
     pending_bibs: List[Dict[str, object]] = []
     zero_based_refs = _refs_are_zero_based(references)
 
+    cite_marker_sentences = sum(
+        1 for node in source_nodes if _extract_ref_index(node.text) is not None
+    )
+    marker_mismatch = 0
+    embedding_misses = 0
+    empty_vector_hits = 0
+    synthetic_targets = 0
+
     for reference in references:
         resolved_doi = reference.get("resolved_doi")
         if not resolved_doi:
@@ -112,13 +120,16 @@ def run(context: PipelineContext, embedding_model: EmbeddingModel | None = None)
             if isinstance(ref_index, int) and not _marker_matches_ref(
                 marker_index, ref_index, zero_based=zero_based_refs
             ):
+                marker_mismatch += 1
                 continue
             source_vector = node_embeddings.get(source_node.sentence_id)
             if not isinstance(source_vector, list):
+                embedding_misses += 1
                 continue
 
             hits = registry.search(resolved_doi_str, source_vector, top_k=top_k, min_score=threshold)
             if not hits:
+                empty_vector_hits += 1
                 synthetic = _synthetic_target_node(context, resolved_doi_str, reference)
                 context.nodes.append(synthetic)
                 nodes_by_doi.setdefault(resolved_doi_str, []).append(synthetic.sentence_id)
@@ -140,6 +151,7 @@ def run(context: PipelineContext, embedding_model: EmbeddingModel | None = None)
                     }
                 )
                 hits = [(synthetic.sentence_id, 0.5)]
+                synthetic_targets += 1
 
             for target_id, score in hits:
                 target_node = node_by_id.get(target_id)
@@ -158,4 +170,16 @@ def run(context: PipelineContext, embedding_model: EmbeddingModel | None = None)
 
     context.artifacts["candidates"] = candidates
     context.artifacts["pending_bibs"] = pending_bibs
+    context.artifacts["pass3_diagnostics"] = {
+        "source_sentence_nodes": len(source_nodes),
+        "cite_marker_sentences": cite_marker_sentences,
+        "resolved_references": sum(1 for ref in references if ref.get("resolved_doi")),
+        "zero_based_refs": zero_based_refs,
+        "marker_mismatch_skips": marker_mismatch,
+        "embedding_lookup_misses": embedding_misses,
+        "empty_vector_index_hits": empty_vector_hits,
+        "synthetic_targets_created": synthetic_targets,
+        "candidate_count": len(candidates),
+        "vector_score_threshold": threshold,
+    }
     return context

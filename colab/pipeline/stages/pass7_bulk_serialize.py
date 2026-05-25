@@ -36,6 +36,14 @@ def run(context: PipelineContext) -> Dict:
         "doi_aliases": context.artifacts.get("doi_aliases", {}),
         "pending_bibs": context.artifacts.get("pending_bibs", []),
         "resolved_references": len(context.artifacts.get("resolved_references", [])),
+        "resolved_doi_count": sum(
+            1
+            for ref in context.artifacts.get("resolved_references", [])
+            if isinstance(ref, dict) and ref.get("resolved_doi")
+        ),
+        "pass3_diagnostics": context.artifacts.get("pass3_diagnostics", {}),
+        "rerank_stats": context.artifacts.get("rerank_stats", {}),
+        "validated_markers": context.artifacts.get("validated_markers", {}),
         "algorithm_version": context.artifacts.get("model_backends", {}).get(
             "algorithm_version",
             context.config.default_algorithm_version,

@@ -412,6 +412,33 @@ class PipelineSmokeTest(unittest.TestCase):
             embed.release()
             rerank.release()
 
+    def test_pass4_keeps_intra_paper_via_vector_floor(self) -> None:
+        from colab.pipeline.stages import pass4_rerank
+        from colab.pipeline.types import PaperInput, PipelineContext
+
+        class LowScoreReranker(RerankerModel):
+            def score_pairs(self, pairs):
+                return [0.1 for _ in pairs]
+
+        context = PipelineContext(
+            config=PipelineConfig(),
+            paper=PaperInput(doi="10.1000/paper", pdf_path="x.pdf", metadata={}),
+        )
+        context.artifacts["candidates"] = [
+            {
+                "source_id": "src1",
+                "target_id": "tgt1",
+                "source_text": "We build on prior work [1].",
+                "target_text": "Attention Is All You Need",
+                "vector_score": 0.5,
+                "ref_index": 0,
+            }
+        ]
+        context = pass4_rerank.run(context, reranker=LowScoreReranker("low-ce"))
+        self.assertEqual(len(context.edges), 1)
+        stats = context.artifacts.get("rerank_stats", {})
+        self.assertEqual(stats.get("kept_via_vector_floor"), 1)
+
     def test_pass2_remaps_embeddings_on_doi_canonicalization(self) -> None:
         from dataclasses import replace
 

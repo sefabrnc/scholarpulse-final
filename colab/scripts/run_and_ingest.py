@@ -65,6 +65,7 @@ def _print_summary(payload: Dict[str, Any], verbose: bool) -> None:
                 "doi": meta.get("doi"),
                 "algorithm_version": meta.get("algorithm_version"),
                 "resolved_references": meta.get("resolved_references"),
+                "resolved_doi_count": meta.get("resolved_doi_count"),
                 "nodes": len(payload.get("nodes", []) or []),
                 "edges": len(payload.get("edges", []) or []),
             },
@@ -75,6 +76,10 @@ def _print_summary(payload: Dict[str, Any], verbose: bool) -> None:
         backends = meta.get("model_backends")
         if backends:
             print("model_backends:", json.dumps(backends, ensure_ascii=True))
+        for key in ("pass3_diagnostics", "rerank_stats", "validated_markers"):
+            value = meta.get(key)
+            if value:
+                print(f"{key}:", json.dumps(value, ensure_ascii=True))
 
 
 def main() -> None:
