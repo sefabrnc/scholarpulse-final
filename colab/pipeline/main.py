@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict
 
-from .clients.canonicalization import CanonicalDoiResolver
+from .clients.canonicalization import CanonicalDoiResolver, normalize_doi
 from .clients.grobid import GrobidClient
 from .clients.openalex import OpenAlexClient
 from .config import PipelineConfig
@@ -46,7 +46,7 @@ def build_context(
         config=config,
     )
     metadata.update(acquisition_meta)
-    paper = PaperInput(doi=doi, pdf_path=resolved_pdf, metadata=metadata)
+    paper = PaperInput(doi=normalize_doi(doi) or doi, pdf_path=resolved_pdf, metadata=metadata)
     return PipelineContext(config=config, paper=paper)
 
 

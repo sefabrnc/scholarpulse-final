@@ -356,6 +356,139 @@ class PipelineSmokeTest(unittest.TestCase):
             embed.release()
             rerank.release()
 
+    def test_intra_paper_cite_edges_grobid_zero_based(self) -> None:
+        from dataclasses import replace
+
+        from colab.pipeline.stages import pass3_candidate_search, pass4_rerank, pass6_marker_validation
+        from colab.pipeline.types import PaperInput, PipelineContext, SentenceNode
+
+        config = replace(
+            PipelineConfig(),
+            vector_score_threshold=0.0,
+            intra_paper_ce_threshold=0.35,
+            ce_threshold=0.85,
+        )
+        source_text = "Attention is all you need for sequence transduction models [1]."
+        context = PipelineContext(
+            config=config,
+            paper=PaperInput(doi="10.1000/paper", pdf_path="x.pdf", metadata={}),
+        )
+        context.nodes = [
+            SentenceNode(
+                sentence_id="src1",
+                doi="10.1000/paper",
+                page=1,
+                norm_x=0.1,
+                norm_y=0.2,
+                norm_w=0.8,
+                norm_h=0.05,
+                text=source_text,
+            )
+        ]
+        context.references = [
+            {
+                "ref_index": 0,
+                "raw_text": "Vaswani et al., Attention Is All You Need, 2017.",
+                "title": "Attention Is All You Need",
+                "resolved_doi": "10.48550/arXiv.1706.03762",
+            }
+        ]
+        context.artifacts["resolved_references"] = list(context.references)
+
+        embed = EmbeddingModel("test-embed")
+        rerank = RerankerModel("test-rerank")
+        try:
+            context.artifacts["node_embeddings"] = {"src1": embed.embed([source_text])[0]}
+            context = pass3_candidate_search.run(context, embedding_model=embed)
+            self.assertGreater(len(context.artifacts.get("candidates", [])), 0)
+
+            context = pass4_rerank.run(context, reranker=rerank)
+            self.assertGreater(len(context.edges), 0, "pass4 should keep grobid-style cite edges")
+
+            context = pass6_marker_validation.run(context)
+            self.assertGreater(len(context.edges), 0, "pass6 should keep grobid-style cite edges")
+            self.assertEqual(context.edges[0].ref_index, 0)
+        finally:
+            embed.release()
+            rerank.release()
+
+    def test_pass2_remaps_embeddings_on_doi_canonicalization(self) -> None:
+        from dataclasses import replace
+
+        from colab.pipeline.clients.canonicalization import CanonicalDoiResolver
+        from colab.pipeline.stages import (
+            pass1_embed,
+            pass2_bib_resolve,
+            pass3_candidate_search,
+            pass4_rerank,
+        )
+        from colab.pipeline.stages.pass2_bib_resolve import _make_sentence_id
+        from colab.pipeline.types import PaperInput, PipelineContext, SentenceNode
+
+        class StubOpenAlex:
+            def get_work_by_doi(self, doi: str):
+                return {"doi": "https://doi.org/10.48550/arxiv.1706.03762", "ids": {}}
+
+        config = replace(
+            PipelineConfig(),
+            vector_score_threshold=0.0,
+            intra_paper_ce_threshold=0.35,
+        )
+        source_text = "Attention is all you need for sequence transduction models [1]."
+        doi_input = "10.48550/arXiv.1706.03762"
+        context = PipelineContext(
+            config=config,
+            paper=PaperInput(doi=doi_input, pdf_path="x.pdf", metadata={}),
+        )
+        context.nodes = [
+            SentenceNode(
+                sentence_id=_make_sentence_id(
+                    doi_input,
+                    1,
+                    (0.1, 0.2, 0.8, 0.05),
+                    source_text,
+                ),
+                doi=doi_input,
+                page=1,
+                norm_x=0.1,
+                norm_y=0.2,
+                norm_w=0.8,
+                norm_h=0.05,
+                text=source_text,
+            )
+        ]
+        context.references = [
+            {
+                "ref_index": 0,
+                "raw_text": "Vaswani et al., Attention Is All You Need, 2017.",
+                "title": "Attention Is All You Need",
+                "doi": doi_input,
+                "authors": [],
+                "year": 2017,
+            }
+        ]
+
+        embed = EmbeddingModel("test-embed")
+        rerank = RerankerModel("test-rerank")
+        resolver = CanonicalDoiResolver(StubOpenAlex(), match_threshold=0.92)
+        try:
+            context = pass1_embed.run(context, embed)
+            pre_pass2_key = next(iter(context.artifacts["node_embeddings"]))
+
+            context = pass2_bib_resolve.run(context, resolver)
+            post_pass2_key = context.nodes[0].sentence_id
+            self.assertNotEqual(pre_pass2_key, post_pass2_key)
+            self.assertIn(post_pass2_key, context.artifacts["node_embeddings"])
+
+            context = pass3_candidate_search.run(context, embedding_model=embed)
+            self.assertGreater(len(context.artifacts.get("candidates", [])), 0)
+
+            context = pass4_rerank.run(context, reranker=rerank)
+            self.assertGreater(len(context.edges), 0, "edges should survive DOI canonicalization")
+        finally:
+            embed.release()
+            rerank.release()
+
     def test_pass8_cross_paper_resolve_stub(self) -> None:
         from colab.pipeline.cross_citations import IncomingCrossCitation
         from colab.pipeline.stages import pass8_cross_paper_resolve

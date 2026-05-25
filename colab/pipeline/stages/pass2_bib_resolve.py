@@ -34,6 +34,49 @@ def _normalize_reference(reference: Dict) -> Dict:
     }
 
 
+def _remap_embedding_artifacts(
+    context: PipelineContext,
+    id_remap: Dict[str, str],
+    canonical_doi: str,
+) -> None:
+    """Keep pass1 embeddings aligned after sentence_id regeneration."""
+    if not id_remap:
+        return
+
+    embeddings = context.artifacts.get("node_embeddings")
+    if isinstance(embeddings, dict):
+        remapped: Dict[str, list] = {}
+        for old_id, vector in embeddings.items():
+            new_id = id_remap.get(str(old_id), str(old_id))
+            remapped[new_id] = vector
+        context.artifacts["node_embeddings"] = remapped
+
+    vectors = context.artifacts.get("vectors")
+    if not isinstance(vectors, dict):
+        return
+
+    for item in vectors.get("sentence", []):
+        if not isinstance(item, dict):
+            continue
+        old_id = str(item.get("id", ""))
+        new_id = id_remap.get(old_id)
+        if not new_id:
+            continue
+        item["id"] = new_id
+        metadata = item.get("metadata")
+        if isinstance(metadata, dict):
+            metadata["sentence_id"] = new_id
+            metadata["doi"] = canonical_doi
+
+    for item in vectors.get("paper", []):
+        if not isinstance(item, dict):
+            continue
+        item["id"] = f"paper:{canonical_doi}"
+        metadata = item.get("metadata")
+        if isinstance(metadata, dict):
+            metadata["doi"] = canonical_doi
+
+
 def run(context: PipelineContext, resolver: CanonicalDoiResolver) -> PipelineContext:
     if context.skipped_reason:
         return context
@@ -45,7 +88,9 @@ def run(context: PipelineContext, resolver: CanonicalDoiResolver) -> PipelineCon
 
     # Canonical DOI changes must reflect node IDs before downstream passes.
     if previous_doi != canonical_doi:
+        id_remap: Dict[str, str] = {}
         for node in context.nodes:
+            old_id = node.sentence_id
             node.doi = canonical_doi
             node.sentence_id = _make_sentence_id(
                 canonical_doi,
@@ -53,6 +98,8 @@ def run(context: PipelineContext, resolver: CanonicalDoiResolver) -> PipelineCon
                 (node.norm_x, node.norm_y, node.norm_w, node.norm_h),
                 node.text or (node.element_label or node.element_type),
             )
+            id_remap[old_id] = node.sentence_id
+        _remap_embedding_artifacts(context, id_remap, canonical_doi)
 
     resolved_refs = []
     for raw_ref in context.references:

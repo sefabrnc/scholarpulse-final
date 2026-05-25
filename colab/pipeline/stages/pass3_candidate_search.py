@@ -14,6 +14,19 @@ from ..types import PipelineContext, SentenceNode
 MARKER_REGEX = re.compile(r"\[(\d+)\]")
 
 
+def _refs_are_zero_based(references: List[Dict[str, object]]) -> bool:
+    for reference in references:
+        ref_index = reference.get("ref_index")
+        if isinstance(ref_index, int) and ref_index == 0:
+            return True
+    return False
+
+
+def _marker_matches_ref(marker_index: int, ref_index: int, *, zero_based: bool) -> bool:
+    expected = ref_index + 1 if zero_based else ref_index
+    return marker_index == expected
+
+
 def _extract_ref_index(sentence: str) -> Optional[int]:
     match = MARKER_REGEX.search(sentence)
     if not match:
@@ -83,6 +96,7 @@ def run(context: PipelineContext, embedding_model: EmbeddingModel | None = None)
     top_k = max(1, context.config.candidate_top_k)
     threshold = float(context.config.vector_score_threshold)
     pending_bibs: List[Dict[str, object]] = []
+    zero_based_refs = _refs_are_zero_based(references)
 
     for reference in references:
         resolved_doi = reference.get("resolved_doi")
@@ -93,7 +107,11 @@ def run(context: PipelineContext, embedding_model: EmbeddingModel | None = None)
 
         for source_node in source_nodes:
             marker_index = _extract_ref_index(source_node.text)
-            if ref_index and marker_index and int(ref_index) != marker_index:
+            if marker_index is None:
+                continue
+            if isinstance(ref_index, int) and not _marker_matches_ref(
+                marker_index, ref_index, zero_based=zero_based_refs
+            ):
                 continue
             source_vector = node_embeddings.get(source_node.sentence_id)
             if not isinstance(source_vector, list):
